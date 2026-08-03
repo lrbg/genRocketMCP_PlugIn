@@ -53,6 +53,23 @@ Es un proxy/CA corporativo que intercepta TLS (Zscaler / Netskope / CA de tu emp
 
 > Si no ves el comando al escribir "GenRocket", instala primero la **v0.1.1** desde [Releases](https://github.com/lrbg/genRocketMCP_PlugIn/releases) (la v0.1.0 no lo trae).
 
+```mermaid
+flowchart TD
+    A["Instala el .vsix v0.1.1"] --> B["Cmd + Shift + P"]
+    B --> C["Escribe: GenRocket: Preparar certificados corporativos"]
+    C --> D["Enter — genera la CA del llavero"]
+    D --> E["Cmd + Q — cierra VS Code por completo"]
+    E --> F["Abre VS Code otra vez"]
+    F --> G["Probar conexion / Registrar MCP: OK"]
+```
+
+<!-- CAPTURAS: si quieres imágenes reales, colócalas en docs/images/ y descoméntalo:
+![Paleta de comandos](docs/images/paso-1-paleta.png)
+![Ejecutar comando](docs/images/paso-2-comando.png)
+![Reiniciar VS Code](docs/images/paso-3-reiniciar.png)
+-->
+
+
 No se apaga la verificación TLS: solo se confía en la CA que tu empresa ya instaló en tu llavero de macOS.
 
 **Diagnóstico opcional (esto SÍ es en la terminal)** — para ver qué CA te intercepta:
