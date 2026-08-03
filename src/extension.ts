@@ -4,6 +4,7 @@ import * as gr from './client'
 import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
 import { GitPanel } from './gitPanel'
+import { buildCaBundle, setLaunchEnv } from './ca'
 
 const SECRET_KEY = 'genrocket.password'
 
@@ -38,6 +39,21 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.openConfig', () => ConfigPanel.show(context, () => tree.refresh()))
 
   reg('genrocket.gitWizard', () => GitPanel.show(context))
+
+  reg('genrocket.setupCorpCert', async () => {
+    try {
+      const file = await buildCaBundle(context)
+      if (!file) { vscode.window.showWarningMessage('Solo disponible en macOS, o no se encontraron certificados en el llavero.'); return }
+      await setLaunchEnv(file)
+      const pick = await vscode.window.showInformationMessage(
+        `Certificados corporativos preparados. Para que VS Code los use, ciérralo por completo (Cmd+Q) y ábrelo de nuevo.\nArchivo: ${file}`,
+        'Copiar ruta',
+      )
+      if (pick === 'Copiar ruta') { vscode.env.clipboard.writeText(file) }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`No se pudieron preparar los certificados: ${e.message}`)
+    }
+  })
 
   reg('genrocket.setPassword', async () => {
     const pass = await vscode.window.showInputBox({ prompt: 'Contraseña de GenRocket', password: true, ignoreFocusOut: true })
@@ -125,23 +141,22 @@ export function activate(context: vscode.ExtensionContext) {
     if (!ws) { vscode.window.showErrorMessage('Abre una carpeta/workspace para registrar el MCP.'); return }
     const c = vscode.workspace.getConfiguration('genrocket')
     const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
+    const caFile = await buildCaBundle(context)  // CA corporativa para que el MCP confíe en el proxy TLS
+    const env: Record<string, string> = {
+      GENROCKET_BASE_URL: c.get('baseUrl', ''),
+      GENROCKET_USERNAME: c.get('username', ''),
+      GENROCKET_ORG_ID: c.get('organizationId', ''),
+      GENROCKET_PASSWORD: '${input:grPassword}',
+      GENROCKET_RUNTIME_CMD: c.get('runtimeCommand', ''),
+      GENROCKET_RUNTIME_OUTDIR: c.get('runtimeOutputDir', ''),
+    }
+    if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
     const content = {
       inputs: [
         { id: 'grPassword', type: 'promptString', description: 'GenRocket password', password: true },
       ],
       servers: {
-        genrocket: {
-          command: 'node',
-          args: [serverPath],
-          env: {
-            GENROCKET_BASE_URL: c.get('baseUrl', ''),
-            GENROCKET_USERNAME: c.get('username', ''),
-            GENROCKET_ORG_ID: c.get('organizationId', ''),
-            GENROCKET_PASSWORD: '${input:grPassword}',
-            GENROCKET_RUNTIME_CMD: c.get('runtimeCommand', ''),
-            GENROCKET_RUNTIME_OUTDIR: c.get('runtimeOutputDir', ''),
-          },
-        },
+        genrocket: { command: 'node', args: [serverPath], env },
       },
     }
     const dir = vscode.Uri.joinPath(ws.uri, '.vscode')

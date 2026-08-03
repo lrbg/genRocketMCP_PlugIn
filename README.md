@@ -40,13 +40,17 @@ Ideal si tu red corporativa te da errores de certificado con npm (`unable to get
 2. En VS Code: **Extensions** → menú `···` (arriba a la derecha) → **Install from VSIX…** → elige el archivo.
 3. Abre el panel **GenRocket** en la barra lateral y configura con el ícono de engrane.
 
-> Nota sobre certificados corporativos: si prefieres compilar desde el código y npm falla por TLS, **no apagues SSL**. Confía en la CA corporativa:
-> ```bash
-> security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-cacerts.pem
-> security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain >> ~/corp-cacerts.pem
-> npm config set cafile ~/corp-cacerts.pem
-> export NODE_EXTRA_CA_CERTS=$HOME/corp-cacerts.pem
-> ```
+### ¿Error "unable to get local issuer certificate" al conectar?
+
+Es un proxy/CA corporativo que intercepta TLS (Zscaler/Netskope/CA de tu empresa). Node no confía en esa CA. Solución integrada (macOS):
+
+1. Ejecuta el comando **`GenRocket: Preparar certificados corporativos (arreglar TLS)`** (Command Palette). Genera el bundle de CAs de tu llavero y configura `NODE_EXTRA_CA_CERTS`.
+2. **Cierra VS Code por completo (Cmd+Q) y ábrelo de nuevo.**
+3. Vuelve a probar conexión / registrar el MCP (el MCP ya incluye esa CA automáticamente).
+
+No se apaga la verificación TLS: solo se confía en la CA que tu empresa ya instaló en el llavero.
+
+> Alternativa manual (para npm desde el código): `security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-cacerts.pem` (+ SystemRootCertificates), luego `npm config set cafile ~/corp-cacerts.pem` y `export NODE_EXTRA_CA_CERTS=$HOME/corp-cacerts.pem`.
 
 ## Instalación (desde el código)
 

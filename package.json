@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "lrbg",
   "engines": { "vscode": "^1.96.0" },
   "categories": ["Other", "AI", "Data Science"],
@@ -55,6 +55,7 @@
     "commands": [
       { "command": "genrocket.openConfig", "title": "GenRocket: Abrir configuración", "icon": "$(gear)" },
       { "command": "genrocket.gitWizard", "title": "GenRocket: Subir mis cambios a GitHub", "icon": "$(cloud-upload)" },
+      { "command": "genrocket.setupCorpCert", "title": "GenRocket: Preparar certificados corporativos (arreglar TLS)" },
       { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
       { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
       { "command": "genrocket.refresh", "title": "GenRocket: Refrescar", "icon": "$(refresh)" },
