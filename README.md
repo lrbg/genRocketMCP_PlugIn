@@ -42,15 +42,31 @@ Ideal si tu red corporativa te da errores de certificado con npm (`unable to get
 
 ### ¿Error "unable to get local issuer certificate" al conectar?
 
-Es un proxy/CA corporativo que intercepta TLS (Zscaler/Netskope/CA de tu empresa). Node no confía en esa CA. Solución integrada (macOS):
+Es un proxy/CA corporativo que intercepta TLS (Zscaler / Netskope / CA de tu empresa). Node no confía en esa CA. Requiere la versión **v0.1.1 o superior** del `.vsix`.
 
-1. Ejecuta el comando **`GenRocket: Preparar certificados corporativos (arreglar TLS)`** (Command Palette). Genera el bundle de CAs de tu llavero y configura `NODE_EXTRA_CA_CERTS`.
-2. **Cierra VS Code por completo (Cmd+Q) y ábrelo de nuevo.**
-3. Vuelve a probar conexión / registrar el MCP (el MCP ya incluye esa CA automáticamente).
+**Un "comando" aquí es de la Paleta de Comandos de VS Code, NO de la terminal.** Pasos (macOS):
 
-No se apaga la verificación TLS: solo se confía en la CA que tu empresa ya instaló en el llavero.
+1. Presiona **`Cmd + Shift + P`** (se abre la barra de búsqueda de comandos arriba).
+2. Escribe: **`GenRocket: Preparar certificados corporativos`** y pulsa **Enter**.
+3. Sale un aviso de que quedó listo → **cierra VS Code por completo con `Cmd + Q`** y ábrelo de nuevo.
+4. Vuelve a **Probar conexión** o a **Registrar el MCP** (el MCP ya incluye esa CA automáticamente).
 
-> Alternativa manual (para npm desde el código): `security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-cacerts.pem` (+ SystemRootCertificates), luego `npm config set cafile ~/corp-cacerts.pem` y `export NODE_EXTRA_CA_CERTS=$HOME/corp-cacerts.pem`.
+> Si no ves el comando al escribir "GenRocket", instala primero la **v0.1.1** desde [Releases](https://github.com/lrbg/genRocketMCP_PlugIn/releases) (la v0.1.0 no lo trae).
+
+No se apaga la verificación TLS: solo se confía en la CA que tu empresa ya instaló en tu llavero de macOS.
+
+**Diagnóstico opcional (esto SÍ es en la terminal)** — para ver qué CA te intercepta:
+```bash
+echo | openssl s_client -connect app.genrocket.com:443 2>/dev/null | grep " i:"
+```
+
+**Alternativa manual** (solo si vas a usar npm compilando desde el código):
+```bash
+security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-cacerts.pem
+security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain >> ~/corp-cacerts.pem
+npm config set cafile ~/corp-cacerts.pem
+export NODE_EXTRA_CA_CERTS=$HOME/corp-cacerts.pem
+```
 
 ## Instalación (desde el código)
 
