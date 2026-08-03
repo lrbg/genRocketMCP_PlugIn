@@ -193,6 +193,13 @@ export async function runScenario(scenarioId, { scenarioName } = {}) {
   return { dir, grs: grsPath, exitCode, stdout: stdout.slice(-3000), stderr: stderr.slice(-3000), outputs }
 }
 
+// ── Escritura (endpoints confirmados; el payload exacto lo define la API de GenRocket) ──
+export async function createDomain(fields = {})    { return grPost('/domain/create',   { organizationId: requireOrg(), ...fields }) }
+export async function cloneDomain(fields = {})     { return grPost('/domain/copy',      { organizationId: requireOrg(), ...fields }) }
+export async function assignGenerator(fields = {}) { return grPost('/generator/assign', { organizationId: requireOrg(), ...fields }) }
+export async function createScenario(fields = {})  { return grPost('/scenario/create',  { organizationId: requireOrg(), ...fields }) }
+export async function publishReceiver(fields = {}) { return grPost('/receiver/publish', { organizationId: requireOrg(), ...fields }) }
+
 // ── Helpers de formato ───────────────────────────────────────────
 const ok  = (text) => ({ content: [{ type: 'text', text }] })
 const bad = (text) => ({ content: [{ type: 'text', text }], isError: true })
@@ -354,4 +361,46 @@ export function registerGenRocketTools(server) {
       }
     }
   )
+
+  // ── Escritura (crear/clonar/asignar/publicar) ────────────────────
+  const writeTool = (name, desc, fn) => server.tool(
+    name, desc,
+    { fields: z.record(z.any()).describe('Campos del objeto segun la API de GenRocket (organizationId se agrega solo). Ej: projectName, versionNumber, name, domainId, ...') },
+    async ({ fields }) => {
+      try {
+        const d = await fn(fields || {})
+        return ok(`OK ${name}:\n${JSON.stringify(d, null, 2).slice(0, 2500)}`)
+      } catch (e) { return bad(`${name}: ${e.message}`) }
+    }
+  )
+  writeTool('genrocket_create_domain',    'Crea un dominio en GenRocket (escritura). Campos tipicos: projectName, versionNumber, name, parent.', createDomain)
+  writeTool('genrocket_clone_domain',     'Clona/copia un dominio (escritura, /domain/copy). Campos: domainId y destino segun la API.', cloneDomain)
+  writeTool('genrocket_assign_generator', 'Asigna un generador a un atributo (escritura). Campos: domainId, name (atributo) y datos del generador.', assignGenerator)
+  writeTool('genrocket_create_scenario',  'Crea un escenario (escritura). Campos: projectName, versionNumber, name, domainId, receiver, etc.', createScenario)
+  writeTool('genrocket_publish_receiver', 'Publica un receiver a un escenario (escritura).', publishReceiver)
+
+  // ── Runtime (generacion / exportacion / mask / subset) ───────────
+  // Todas ejecutan el Runtime local sobre el escenario; el formato de salida y las
+  // transformaciones dependen de los receivers/config del escenario en el Designer.
+  const runtimeAlias = (name, desc) => server.tool(
+    name, desc,
+    {
+      scenarioId: z.string().describe('externalId del escenario (de genrocket_list_scenarios)'),
+      scenarioName: z.string().optional().describe('Nombre del escenario (opcional)'),
+    },
+    async ({ scenarioId, scenarioName }) => {
+      try {
+        const r = await runScenario(scenarioId, { scenarioName })
+        const outs = r.outputs.length
+          ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n')
+          : '  (sin archivos; revisa los receivers configurados en el escenario)'
+        return ok(`Runtime ejecutado (exit ${r.exitCode}).\nCarpeta: ${r.dir}\nArchivos:\n${outs}`)
+      } catch (e) { return bad(`${name}: ${e.message}`) }
+    }
+  )
+  runtimeAlias('genrocket_generate_data',   'Genera datos sinteticos ejecutando el escenario con el Runtime local.')
+  runtimeAlias('genrocket_export_csv',      'Genera y exporta a CSV: ejecuta el Runtime. Requiere que el escenario tenga un receiver CSV.')
+  runtimeAlias('genrocket_export_sql',      'Genera y exporta a SQL: ejecuta el Runtime. Requiere que el escenario tenga un receiver SQL/BD.')
+  runtimeAlias('genrocket_mask_database',   'Enmascara datos (masking): ejecuta el Runtime. El enmascaramiento se configura en el dominio/escenario.')
+  runtimeAlias('genrocket_subset_database', 'Subset de base de datos: ejecuta el Runtime. El subsetting se configura en el escenario.')
 }
