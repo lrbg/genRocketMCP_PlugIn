@@ -54,6 +54,7 @@
     },
     "commands": [
       { "command": "genrocket.openConfig", "title": "GenRocket: Abrir configuración", "icon": "$(gear)" },
+      { "command": "genrocket.gitWizard", "title": "GenRocket: Subir mis cambios a GitHub", "icon": "$(cloud-upload)" },
       { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
       { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
       { "command": "genrocket.refresh", "title": "GenRocket: Refrescar", "icon": "$(refresh)" },
@@ -64,8 +65,9 @@
     ],
     "menus": {
       "view/title": [
-        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@1" },
-        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@2" }
+        { "command": "genrocket.gitWizard", "when": "view == genrocketExplorer", "group": "navigation@1" },
+        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@2" },
+        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@3" }
       ],
       "view/item/context": [
         { "command": "genrocket.downloadScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },

@@ -12,6 +12,19 @@ Reúne en una sola extensión lo que antes vivía disperso: **configuración + t
 - **Plantilla CSV** por dominio (columnas = atributos) para carga masiva.
 - **Servidor MCP**: registra las herramientas de GenRocket en Copilot Chat para conversar en lenguaje natural (test conexión, listar proyectos/escenarios/chains/dominios/generadores, descargar, ejecutar Runtime).
 - **Credenciales seguras**: la contraseña se guarda en el **SecretStorage** de VS Code (no en texto plano). El MCP la pide con un input seguro.
+- **Subir a GitHub (asistente paso a paso)**: conecta tu cuenta de GitHub, elige un repositorio, clónalo si hace falta, elige o crea una rama y sube tus cambios con un mensaje — todo guiado, en 5 pasos, sin comandos de git.
+
+## Subir mis cambios a GitHub (fácil)
+
+Comando **`GenRocket: Subir mis cambios a GitHub`** (o el ícono de subida en el explorador). Un asistente con 5 pasos:
+
+1. **Conecta tu cuenta de GitHub** (login propio de VS Code; puedes cambiar de cuenta).
+2. **Elige tu repositorio** de la lista de tus repos.
+3. **Carpeta**: si ya lo tienes abierto lo usa; si no, lo **clona** por ti.
+4. **Elige o crea una rama**.
+5. **Escribe qué hiciste** y pulsa **Guardar y subir**.
+
+No se guardan tokens: usa tu sesión de GitHub de VS Code para autenticar el push.
 
 ## Requisitos
 

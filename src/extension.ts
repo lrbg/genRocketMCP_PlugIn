@@ -3,6 +3,7 @@ import * as path from 'path'
 import * as gr from './client'
 import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
+import { GitPanel } from './gitPanel'
 
 const SECRET_KEY = 'genrocket.password'
 
@@ -35,6 +36,8 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.refresh', () => tree.refresh())
 
   reg('genrocket.openConfig', () => ConfigPanel.show(context, () => tree.refresh()))
+
+  reg('genrocket.gitWizard', () => GitPanel.show(context))
 
   reg('genrocket.setPassword', async () => {
     const pass = await vscode.window.showInputBox({ prompt: 'Contraseña de GenRocket', password: true, ignoreFocusOut: true })
