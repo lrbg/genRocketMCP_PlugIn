@@ -43,10 +43,13 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.setupCorpCert', async () => {
     try {
       const file = await buildCaBundle(context)
-      if (!file) { vscode.window.showWarningMessage('Solo disponible en macOS, o no se encontraron certificados en el llavero.'); return }
+      if (!file) { vscode.window.showWarningMessage('No se encontraron certificados de sistema (soportado en macOS y Windows).'); return }
       await setLaunchEnv(file)
+      const restart = process.platform === 'darwin' ? 'ciérralo por completo (Cmd+Q) y ábrelo de nuevo'
+        : process.platform === 'win32' ? 'ciérralo por completo (todas las ventanas) y ábrelo de nuevo'
+        : 'reinícialo'
       const pick = await vscode.window.showInformationMessage(
-        `Certificados corporativos preparados. Para que VS Code los use, ciérralo por completo (Cmd+Q) y ábrelo de nuevo.\nArchivo: ${file}`,
+        `Certificados corporativos preparados. Para que VS Code los use, ${restart}.\nArchivo: ${file}`,
         'Copiar ruta',
       )
       if (pick === 'Copiar ruta') { vscode.env.clipboard.writeText(file) }
