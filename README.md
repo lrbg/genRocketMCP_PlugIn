@@ -32,6 +32,22 @@ No se guardan tokens: usa tu sesión de GitHub de VS Code para autenticar el pus
 - Node.js 20+
 - Java (para el GenRocket Runtime) y el **GenRocket Runtime engine** instalado (software propietario de GenRocket) si vas a generar datos.
 
+## Instalación (recomendada): desde el `.vsix` — sin npm
+
+Ideal si tu red corporativa te da errores de certificado con npm (`unable to get local issuer certificate`). El `.vsix` ya trae todo (incluidas las dependencias del servidor MCP), así que **no necesitas `npm install`**.
+
+1. Descarga el `.vsix` desde **[Releases](https://github.com/lrbg/genRocketMCP_PlugIn/releases)**.
+2. En VS Code: **Extensions** → menú `···` (arriba a la derecha) → **Install from VSIX…** → elige el archivo.
+3. Abre el panel **GenRocket** en la barra lateral y configura con el ícono de engrane.
+
+> Nota sobre certificados corporativos: si prefieres compilar desde el código y npm falla por TLS, **no apagues SSL**. Confía en la CA corporativa:
+> ```bash
+> security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-cacerts.pem
+> security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain >> ~/corp-cacerts.pem
+> npm config set cafile ~/corp-cacerts.pem
+> export NODE_EXTRA_CA_CERTS=$HOME/corp-cacerts.pem
+> ```
+
 ## Instalación (desde el código)
 
 ```bash
@@ -40,7 +56,7 @@ npm run compile        # compila TypeScript a ./out
 (cd mcp && npm install) # dependencias del servidor MCP
 ```
 
-Luego abre la carpeta en VS Code y pulsa **F5** (Extension Development Host), o empaqueta:
+Luego abre la carpeta en VS Code y pulsa **F5** (Extension Development Host), o empaqueta tu propio `.vsix`:
 
 ```bash
 npm run package        # genera el .vsix (requiere @vscode/vsce)
