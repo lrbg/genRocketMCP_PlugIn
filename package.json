@@ -1,0 +1,86 @@
+{
+  "name": "genrocket-mcp-plugin",
+  "displayName": "GenRocket MCP",
+  "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
+  "version": "0.1.0",
+  "publisher": "lrbg",
+  "engines": { "vscode": "^1.96.0" },
+  "categories": ["Other", "AI", "Data Science"],
+  "keywords": ["genrocket", "mcp", "synthetic data", "test data", "runtime"],
+  "repository": { "type": "git", "url": "https://github.com/lrbg/genrocketMCP_PlugIn.git" },
+  "license": "MIT",
+  "main": "./out/extension.js",
+  "activationEvents": ["onView:genrocketExplorer"],
+  "contributes": {
+    "configuration": {
+      "title": "GenRocket MCP",
+      "properties": {
+        "genrocket.baseUrl": {
+          "type": "string",
+          "default": "https://app.genrocket.com",
+          "description": "Host / tenant de GenRocket (sin /rest). Vacío usa https://app.genrocket.com"
+        },
+        "genrocket.username": {
+          "type": "string",
+          "default": "",
+          "description": "Usuario (email) de GenRocket. La contraseña se guarda con el comando 'GenRocket: Set Password' (cifrada en SecretStorage)."
+        },
+        "genrocket.organizationId": {
+          "type": "string",
+          "default": "",
+          "description": "Organization external ID (requerido para listar/descargar/generar)."
+        },
+        "genrocket.runtimeCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Comando para ejecutar el GenRocket Runtime local sobre un .grs. Usa {grs} y {dir} como placeholders. Ej: java -jar /ruta/GenRocketRuntime.jar {grs}"
+        },
+        "genrocket.runtimeOutputDir": {
+          "type": "string",
+          "default": "",
+          "description": "Carpeta base de salida del Runtime. Vacío usa una carpeta temporal del sistema."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "genrocket", "title": "GenRocket", "icon": "media/rocket.svg" }
+      ]
+    },
+    "views": {
+      "genrocket": [
+        { "id": "genrocketExplorer", "name": "Explorador" }
+      ]
+    },
+    "commands": [
+      { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
+      { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
+      { "command": "genrocket.refresh", "title": "GenRocket: Refrescar", "icon": "$(refresh)" },
+      { "command": "genrocket.registerMcpServer", "title": "GenRocket: Registrar servidor MCP (Copilot Chat)" },
+      { "command": "genrocket.downloadScenario", "title": "Descargar escenario (.grs)", "icon": "$(cloud-download)" },
+      { "command": "genrocket.runScenario", "title": "Generar datos con el Runtime", "icon": "$(play)" },
+      { "command": "genrocket.downloadDomainTemplate", "title": "Plantilla CSV del dominio", "icon": "$(file-code)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation" }
+      ],
+      "view/item/context": [
+        { "command": "genrocket.downloadScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },
+        { "command": "genrocket.runScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },
+        { "command": "genrocket.downloadDomainTemplate", "when": "view == genrocketExplorer && viewItem == domain", "group": "inline" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.5.0"
+  }
+}

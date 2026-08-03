@@ -1,0 +1,16 @@
+{
+  "name": "genrocket-mcp-server",
+  "version": "0.1.0",
+  "description": "Servidor MCP de GenRocket (usado por la extensión de VS Code)",
+  "type": "module",
+  "private": true,
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.4"
+  },
+  "engines": { "node": ">=20" }
+}
