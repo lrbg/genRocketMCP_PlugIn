@@ -18,7 +18,7 @@
         "genrocket.baseUrl": {
           "type": "string",
           "default": "https://app.genrocket.com",
-          "description": "Host / tenant de GenRocket (sin /rest). Vacío usa https://app.genrocket.com"
+          "description": "Host / tenant de GenRocket (sin /rest). Pon el tenant de tu organización, ej. https://TU-ORG.genrocket.com"
         },
         "genrocket.username": {
           "type": "string",
@@ -53,6 +53,7 @@
       ]
     },
     "commands": [
+      { "command": "genrocket.openConfig", "title": "GenRocket: Abrir configuración", "icon": "$(gear)" },
       { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
       { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
       { "command": "genrocket.refresh", "title": "GenRocket: Refrescar", "icon": "$(refresh)" },
@@ -63,7 +64,8 @@
     ],
     "menus": {
       "view/title": [
-        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation" }
+        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@1" },
+        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@2" }
       ],
       "view/item/context": [
         { "command": "genrocket.downloadScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },

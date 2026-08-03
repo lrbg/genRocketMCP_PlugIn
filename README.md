@@ -35,11 +35,17 @@ npm run package        # genera el .vsix (requiere @vscode/vsce)
 
 ## Configuración
 
-Ajustes (`Settings → GenRocket MCP`):
+Cada usuario configura **sus propios datos**. La forma más clara es la **ventana de configuración**: comando **`GenRocket: Abrir configuración`** (o el ícono de engrane en el panel del explorador). Ahí pones tenant, usuario, contraseña, org id y el comando del Runtime, con botones para **probar conexión** y **registrar el MCP**.
+
+- La **contraseña** se guarda cifrada en el **SecretStorage** de VS Code — nunca en el repositorio ni en texto plano.
+- El **chat de IA** usa **tu propia suscripción de GitHub Copilot**; la extensión no guarda tokens de Copilot ni de OpenAI.
+- Nada viene precargado con datos de otra organización: los valores por defecto son genéricos y **editables** por el usuario.
+
+También puedes editar todo desde `Settings → GenRocket MCP`:
 
 | Ajuste | Descripción |
 |---|---|
-| `genrocket.baseUrl` | Host/tenant, ej. `https://app.genrocket.com` |
+| `genrocket.baseUrl` | Host/tenant de tu organización, ej. `https://TU-ORG.genrocket.com` |
 | `genrocket.username` | Usuario (email) |
 | `genrocket.organizationId` | Organization external ID |
 | `genrocket.runtimeCommand` | Comando del Runtime, con `{grs}` y `{dir}`. Ej: `java -jar /ruta/GenRocketRuntime.jar {grs}` |
