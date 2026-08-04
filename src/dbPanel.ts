@@ -46,6 +46,7 @@ export class DbPanel {
         if (!v.name || !v.jdbcUrl || !v.driverJar) { this.post({ type: 'toast', ok: false, text: 'Faltan campos: nombre, jdbcUrl y driverJar son obligatorios.' }); return }
         await db.addConnection({ name: v.name, type: v.type || 'oracle', jdbcUrl: v.jdbcUrl, user: v.user || '', driverJar: v.driverJar })
         if (v.password) { await this.context.secrets.store(db.pwKey(v.name), v.password) }
+        await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
         await this.sendState()
         this.post({ type: 'toast', ok: true, text: `Conexión "${v.name}" guardada.` })
         return

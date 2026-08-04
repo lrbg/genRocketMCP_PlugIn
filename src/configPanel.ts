@@ -51,8 +51,10 @@ export class ConfigPanel {
         await this.context.secrets.store(SECRET_KEY, v.password)
       }
       this.onSaved()
+      // Re-genera .vscode/mcp.json con la config nueva (si hay carpeta abierta)
+      await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
       this.panel.webview.postMessage({ type: 'saved' })
-      vscode.window.showInformationMessage('GenRocket: configuración guardada.')
+      vscode.window.showInformationMessage('GenRocket: configuración guardada. Si usas el MCP en Copilot, reinícialo en .vscode/mcp.json (Restart) para aplicar los cambios.')
     } else if (msg.type === 'test') {
       try {
         const password = (await this.context.secrets.get(SECRET_KEY)) || msg.values?.password || ''

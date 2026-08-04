@@ -142,9 +142,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage(`Plantilla CSV guardada: ${uri.fsPath}`)
   })
 
-  reg('genrocket.registerMcpServer', async () => {
+  reg('genrocket.registerMcpServer', async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent
     const ws = vscode.workspace.workspaceFolders?.[0]
-    if (!ws) { vscode.window.showErrorMessage('Abre una carpeta/workspace para registrar el MCP.'); return }
+    if (!ws) { if (!silent) { vscode.window.showErrorMessage('Abre una carpeta/workspace para registrar el MCP.') } return }
     const c = vscode.workspace.getConfiguration('genrocket')
     const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
     const caFile = await buildCaBundle(context)  // CA corporativa para que el MCP confíe en el proxy TLS
@@ -186,10 +187,12 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       await vscode.workspace.fs.createDirectory(dir)
       await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(content, null, 2), 'utf8'))
-      vscode.window.showInformationMessage('MCP registrado en .vscode/mcp.json. Ábrelo y presiona "Start" para usarlo en Copilot Chat.')
-      vscode.window.showTextDocument(file)
+      if (!silent) {
+        vscode.window.showInformationMessage('MCP registrado en .vscode/mcp.json. Ábrelo y presiona "Start" (o Restart si ya estaba corriendo) para usarlo en Copilot Chat.')
+        vscode.window.showTextDocument(file)
+      }
     } catch (e: any) {
-      vscode.window.showErrorMessage(`No se pudo escribir mcp.json: ${e.message}`)
+      if (!silent) { vscode.window.showErrorMessage(`No se pudo escribir mcp.json: ${e.message}`) }
     }
   })
 }
