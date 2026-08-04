@@ -558,13 +558,33 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_create_attribute',
-    'Crea un atributo en un dominio de GenRocket, con su generador (escritura, /attribute/create). ANTES de llamar esta tool: (1) usa genrocket_available_generators para ver los generadores adecuados al tipo del atributo, (2) PREGUNTA al usuario cual generador quiere (dale 2-3 ejemplos), (3) pasa en "fields" al menos: domainId (externalId del dominio), name (nombre del atributo) y el generador elegido. El esquema exacto lo define GenRocket; si falta un campo, el error lo indica.',
-    { fields: z.record(z.any()).describe('domainId, name y datos del generador (organizationId se agrega solo).') },
-    async ({ fields }) => {
+    'Crea un atributo con su generador en un dominio (escritura). El generador se envia como OBJETO (no string). Flujo recomendado: (1) genrocket_suggest_generators para elegir el tipo, (2) pregunta al usuario, (3) llama esto con: projectName, domainId, name, type (metadataType: String/Integer/Date/Reference/Boolean...), generator (tipo del catalogo, ej FlexibleDateRangeGen) y parameters (objeto nombre:valor, opcional). Al terminar, VERIFICA con genrocket_list_generators que el generador quedo asignado (la API puede responder success sin asignarlo si algo no coincide).',
+    {
+      projectName: z.string().describe('Nombre del proyecto'),
+      version: z.string().optional().describe('Version (default 1.0)'),
+      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
+      name: z.string().describe('Nombre del atributo'),
+      type: z.string().optional().describe('Tipo del atributo (metadataType), ej. String, Integer, Date, Reference, Boolean. Default String'),
+      generator: z.string().optional().describe('Tipo de generador (ej. FlexibleDateRangeGen, RangeGen). De genrocket_suggest_generators'),
+      parameters: z.record(z.any()).optional().describe('Parametros del generador como objeto nombre:valor (ej. {"startDate":"2000-01-01","endDate":"2020-12-31"})'),
+    },
+    async ({ projectName, version = '1.0', domainId, name, type = 'String', generator, parameters }) => {
       try {
-        const d = await createAttribute(fields || {})
-        return ok(`OK genrocket_create_attribute:\n${JSON.stringify(d, null, 2).slice(0, 2500)}`)
-      } catch (e) { return bad(`genrocket_create_attribute: ${e.message}`) }
+        const gens = generator ? [{
+          name: 'gen1', sequenceNumber: 1, generator,
+          parameters: Object.entries(parameters || {}).map(([n, v]) => ({ name: n, value: String(v), values: [] })),
+        }] : []
+        const payload = {
+          organizationId: requireOrg(), projectName, versionNumber: version,
+          domainId, name, metadataType: type, generators: gens,
+        }
+        const d = await grPost('/attribute/create', payload)
+        return ok(
+          `create_attribute enviado (tipo ${type}, generador ${generator || '(ninguno)'}).\n` +
+          `Respuesta: ${JSON.stringify(d).slice(0, 800)}\n\n` +
+          `IMPORTANTE: verifica con genrocket_list_generators (domainId="${domainId}", attributeName="${name}") que el generador quedo asignado.`,
+        )
+      } catch (e) { return bad(`create_attribute: ${e.message}`) }
     }
   )
 
