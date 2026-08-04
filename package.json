@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "lrbg",
   "engines": { "vscode": "^1.96.0" },
   "categories": ["Other", "AI", "Data Science"],
@@ -71,6 +71,7 @@
     "commands": [
       { "command": "genrocket.openConfig", "title": "GenRocket: Abrir configuración", "icon": "$(gear)" },
       { "command": "genrocket.gitWizard", "title": "GenRocket: Subir mis cambios a GitHub", "icon": "$(cloud-upload)" },
+      { "command": "genrocket.openDb", "title": "GenRocket: Bases de datos (consultas)", "icon": "$(database)" },
       { "command": "genrocket.setupCorpCert", "title": "GenRocket: Preparar certificados corporativos (arreglar TLS)" },
       { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
       { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
@@ -82,9 +83,10 @@
     ],
     "menus": {
       "view/title": [
-        { "command": "genrocket.gitWizard", "when": "view == genrocketExplorer", "group": "navigation@1" },
-        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@2" },
-        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@3" }
+        { "command": "genrocket.openDb", "when": "view == genrocketExplorer", "group": "navigation@1" },
+        { "command": "genrocket.gitWizard", "when": "view == genrocketExplorer", "group": "navigation@2" },
+        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@3" },
+        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@4" }
       ],
       "view/item/context": [
         { "command": "genrocket.downloadScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },

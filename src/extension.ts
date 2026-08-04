@@ -5,6 +5,7 @@ import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
 import { GitPanel } from './gitPanel'
 import { buildCaBundle, setLaunchEnv } from './ca'
+import { DbPanel } from './dbPanel'
 
 const SECRET_KEY = 'genrocket.password'
 
@@ -39,6 +40,8 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.openConfig', () => ConfigPanel.show(context, () => tree.refresh()))
 
   reg('genrocket.gitWizard', () => GitPanel.show(context))
+
+  reg('genrocket.openDb', () => DbPanel.show(context))
 
   reg('genrocket.setupCorpCert', async () => {
     try {
