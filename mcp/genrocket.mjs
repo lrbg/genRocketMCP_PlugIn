@@ -211,15 +211,62 @@ export async function createScenario(fields = {})  { return grPost('/scenario/cr
 export async function publishReceiver(fields = {}) { return grPost('/receiver/publish', { organizationId: requireOrg(), ...fields }) }
 export async function createAttribute(fields = {})  { return grPost('/attribute/create',  { organizationId: requireOrg(), ...fields }) }
 
-// Catálogo de generadores disponibles en GenRocket (para que el agente sugiera y pregunte)
-export async function listAvailableGenerators(filter) {
+// Catálogo de generadores (cacheado en el proceso para que sea rápido)
+let _genCache = null
+async function fetchAllGenerators() {
+  if (_genCache) { return _genCache }
   const data = await grPost('/generators/list', { organizationId: requireOrg() })
-  let gens = data?.generators ?? []
+  _genCache = data?.generators ?? []
+  return _genCache
+}
+export async function listAvailableGenerators(filter) {
+  let gens = await fetchAllGenerators()
   if (filter) {
     const f = String(filter).toLowerCase()
     gens = gens.filter(g => (g.name || '').toLowerCase().includes(f) || (g.description || '').toLowerCase().includes(f))
   }
   return gens
+}
+
+// Deriva palabras clave del nombre del atributo para filtrar generadores.
+function keywordsForAttribute(attr) {
+  const n = String(attr || '').toLowerCase()
+  const map = [
+    [/(fecha|date|nacimiento|birth|dob|dia|\bday\b|time|hora)/, ['date', 'time']],
+    [/(nombre|name|first|last|apellido|fullname)/, ['name']],
+    [/(email|correo|mail)/, ['email']],
+    [/(phone|tel|celular|movil|mobile)/, ['phone']],
+    [/(direccion|address|calle|street)/, ['address', 'street']],
+    [/(ciudad|city)/, ['city']],
+    [/(estado|state|province|provincia)/, ['state']],
+    [/(pais|country)/, ['country']],
+    [/(zip|postal|\bcp\b)/, ['zip', 'postal']],
+    [/(edad|age)/, ['age', 'integer']],
+    [/(monto|amount|precio|price|salary|salario|money|importe|saldo|balance)/, ['money', 'currency', 'decimal']],
+    [/(activo|active|flag|bool|habilitado|enabled|estatus|status)/, ['boolean']],
+    [/(genero|gender|sexo)/, ['gender']],
+    [/(porcentaje|percent|rate|tasa)/, ['percent', 'decimal']],
+    [/(id|codigo|code|number|numero|\bnum\b|folio)/, ['id', 'number', 'integer', 'uuid']],
+  ]
+  for (const [re, kws] of map) { if (re.test(n)) { return kws } }
+  return []
+}
+
+export async function suggestGenerators(attributeName, limit = 15) {
+  const all = await fetchAllGenerators()
+  const kws = keywordsForAttribute(attributeName)
+  let matches = []
+  if (kws.length) {
+    matches = all.filter(g => {
+      const hay = `${g.name || ''} ${g.description || ''}`.toLowerCase()
+      return kws.some(k => hay.includes(k))
+    })
+  }
+  if (!matches.length) {
+    const tok = String(attributeName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (tok) { matches = all.filter(g => (g.name || '').toLowerCase().includes(tok)) }
+  }
+  return { keywords: kws, generators: matches.slice(0, limit), total: all.length }
 }
 
 // ── Módulo de Base de Datos (JDBC de solo lectura: Oracle + SQL Server) ──────
@@ -487,6 +534,25 @@ export function registerGenRocketTools(server) {
         const extra = gens.length > limit ? `\n… (${gens.length - limit} mas; usa un filtro mas especifico)` : ''
         return ok(`Generadores${filter ? ` que contienen "${filter}"` : ''} (${gens.length}):\n${lines}${extra}`)
       } catch (e) { return bad(`Error al listar generadores: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_suggest_generators',
+    'Sugiere generadores adecuados para un atributo SEGUN SU NOMBRE (rapido, filtra el catalogo por el tema inferido; ej. "fecha_nacimiento" -> generadores de fecha, "correo" -> email). Presenta estas opciones al usuario y preguntale cual usar; el usuario tambien puede indicar uno por nombre directamente.',
+    {
+      attributeName: z.string().describe('Nombre del atributo (ej. fecha_nacimiento, correo, telefono, edad)'),
+      limit: z.number().int().positive().optional().describe('Maximo de sugerencias (default 15)'),
+    },
+    async ({ attributeName, limit = 15 }) => {
+      try {
+        const { keywords, generators } = await suggestGenerators(attributeName, limit)
+        if (!generators.length) {
+          return ok(`No encontre generadores obvios para "${attributeName}". Prueba genrocket_available_generators con un filtro (ej. date, name, email).`)
+        }
+        const lines = generators.map(g => `- ${g.name}: ${(g.description || '').slice(0, 110)}`).join('\n')
+        return ok(`Generadores sugeridos para "${attributeName}"${keywords.length ? ` (tema: ${keywords.join(' / ')})` : ''}:\n${lines}\n\n¿Cual usamos? (o dime otro por su nombre)`)
+      } catch (e) { return bad(`Error al sugerir generadores: ${e.message}`) }
     }
   )
 
