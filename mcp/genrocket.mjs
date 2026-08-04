@@ -209,6 +209,18 @@ export async function cloneDomain(fields = {})     { return grPost('/domain/copy
 export async function assignGenerator(fields = {}) { return grPost('/generator/assign', { organizationId: requireOrg(), ...fields }) }
 export async function createScenario(fields = {})  { return grPost('/scenario/create',  { organizationId: requireOrg(), ...fields }) }
 export async function publishReceiver(fields = {}) { return grPost('/receiver/publish', { organizationId: requireOrg(), ...fields }) }
+export async function createAttribute(fields = {})  { return grPost('/attribute/create',  { organizationId: requireOrg(), ...fields }) }
+
+// Catálogo de generadores disponibles en GenRocket (para que el agente sugiera y pregunte)
+export async function listAvailableGenerators(filter) {
+  const data = await grPost('/generators/list', { organizationId: requireOrg() })
+  let gens = data?.generators ?? []
+  if (filter) {
+    const f = String(filter).toLowerCase()
+    gens = gens.filter(g => (g.name || '').toLowerCase().includes(f) || (g.description || '').toLowerCase().includes(f))
+  }
+  return gens
+}
 
 // ── Módulo de Base de Datos (JDBC de solo lectura: Oracle + SQL Server) ──────
 const JAVA_BIN = process.env.GENROCKET_JAVA || 'java'
@@ -459,6 +471,36 @@ export function registerGenRocketTools(server) {
   writeTool('genrocket_assign_generator', 'Asigna un generador a un atributo (escritura). Campos: domainId, name (atributo) y datos del generador.', assignGenerator)
   writeTool('genrocket_create_scenario',  'Crea un escenario (escritura). Campos: projectName, versionNumber, name, domainId, receiver, etc.', createScenario)
   writeTool('genrocket_publish_receiver', 'Publica un receiver a un escenario (escritura).', publishReceiver)
+
+  server.tool(
+    'genrocket_available_generators',
+    'Lista el CATALOGO de generadores disponibles en GenRocket (nombre y descripcion). Usa "filter" para buscar por tema (ej. "date", "name", "email", "phone", "boolean"). IMPORTANTE: usa esta tool ANTES de crear un atributo para saber que generadores existen, proponer 2-3 opciones adecuadas al tipo del atributo (ej. para una fecha: los que contengan "date") y PREGUNTAR al usuario cual prefiere.',
+    {
+      filter: z.string().optional().describe('Palabra para filtrar (ej. date, name, email, phone, boolean, address)'),
+      limit: z.number().int().positive().optional().describe('Maximo a mostrar (default 40)'),
+    },
+    async ({ filter, limit = 40 }) => {
+      try {
+        const gens = await listAvailableGenerators(filter)
+        if (!gens.length) return ok(filter ? `Sin generadores que coincidan con "${filter}".` : 'Sin generadores.')
+        const lines = gens.slice(0, limit).map(g => `- ${g.name}: ${(g.description || '').slice(0, 120)}`).join('\n')
+        const extra = gens.length > limit ? `\n… (${gens.length - limit} mas; usa un filtro mas especifico)` : ''
+        return ok(`Generadores${filter ? ` que contienen "${filter}"` : ''} (${gens.length}):\n${lines}${extra}`)
+      } catch (e) { return bad(`Error al listar generadores: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_create_attribute',
+    'Crea un atributo en un dominio de GenRocket, con su generador (escritura, /attribute/create). ANTES de llamar esta tool: (1) usa genrocket_available_generators para ver los generadores adecuados al tipo del atributo, (2) PREGUNTA al usuario cual generador quiere (dale 2-3 ejemplos), (3) pasa en "fields" al menos: domainId (externalId del dominio), name (nombre del atributo) y el generador elegido. El esquema exacto lo define GenRocket; si falta un campo, el error lo indica.',
+    { fields: z.record(z.any()).describe('domainId, name y datos del generador (organizationId se agrega solo).') },
+    async ({ fields }) => {
+      try {
+        const d = await createAttribute(fields || {})
+        return ok(`OK genrocket_create_attribute:\n${JSON.stringify(d, null, 2).slice(0, 2500)}`)
+      } catch (e) { return bad(`genrocket_create_attribute: ${e.message}`) }
+    }
+  )
 
   // ── Runtime (generacion / exportacion / mask / subset) ───────────
   // Todas ejecutan el Runtime local sobre el escenario; el formato de salida y las
