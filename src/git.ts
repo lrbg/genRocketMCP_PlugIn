@@ -35,6 +35,21 @@ export async function listRepos(token: string): Promise<Repo[]> {
   return all
 }
 
+export async function listApiBranches(token: string, owner: string, name: string): Promise<string[]> {
+  const out: string[] = []
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${name}/branches?per_page=100&page=${page}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } },
+    )
+    if (!res.ok) { break }
+    const arr = (await res.json()) as any[]
+    for (const b of arr) { out.push(b.name) }
+    if (arr.length < 100) { break }
+  }
+  return out
+}
+
 function authArgs(token?: string): string[] {
   if (!token) { return [] }
   const basic = Buffer.from(`x-access-token:${token}`).toString('base64')

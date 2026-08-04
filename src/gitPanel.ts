@@ -66,7 +66,10 @@ export class GitPanel {
       } else if (m.type === 'pickRepo') {
         this.selected = this.repos.find(r => r.fullName === m.fullName)
         this.workingDir = undefined; this.branches = []; this.current = ''
-        if (this.selected) {
+        if (this.selected && this.session) {
+          // Todas las ramas del remoto (aunque no esté clonado)
+          try { this.branches = await git.listApiBranches(this.session.accessToken, this.selected.owner, this.selected.name) } catch { this.branches = [] }
+          if (this.selected.defaultBranch && !this.current) { this.current = this.selected.defaultBranch }
           const local = await git.findLocalRepo(this.selected.owner, this.selected.name)
           if (local) { await this.useDir(local) }
         }
@@ -104,8 +107,10 @@ export class GitPanel {
 
   private async useDir(dir: string) {
     this.workingDir = dir
-    this.branches = await git.listBranches(dir).catch(() => [])
     this.current = await git.currentBranch(dir).catch(() => '')
+    // Agrega ramas locales que no vinieron del API (sin sobreescribir la lista)
+    const local = await git.listBranches(dir).catch(() => [])
+    for (const b of local) { if (!this.branches.includes(b)) { this.branches.push(b) } }
   }
 
   private dispose() {
