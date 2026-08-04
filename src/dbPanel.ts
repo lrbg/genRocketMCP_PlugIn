@@ -71,6 +71,15 @@ export class DbPanel {
       } else if (m.type === 'query') {
         const r = await db.runQuery(this.context, conn, pw, m.sql, 300)
         this.post({ type: 'result', title: 'Resultado', result: r })
+      } else if (m.type === 'ask') {
+        if (!m.question || !m.question.trim()) { this.post({ type: 'toast', ok: false, text: 'Escribe una pregunta.' }); return }
+        this.post({ type: 'thinking', on: true })
+        try {
+          const r = await db.nlExplore(this.context, conn, pw, m.question.trim())
+          this.post({ type: 'nlResult', sql: r.sql, tablesUsed: r.tablesUsed, result: r.result })
+        } finally {
+          this.post({ type: 'thinking', on: false })
+        }
       }
     } catch (e: any) {
       this.post({ type: 'toast', ok: false, text: e.message })
@@ -103,6 +112,8 @@ export class DbPanel {
   #toast{display:none;margin-top:10px;padding:9px;border-radius:6px;} #toast.good{background:rgba(60,180,90,.15);} #toast.bad{background:rgba(220,70,70,.18);}
   .muted{color:var(--vscode-descriptionForeground);font-size:.82em;}
   #resultWrap{overflow:auto;max-height:45vh;}
+  #chips{margin:6px 0;} .chip{font-size:.82em;padding:5px 10px;border-radius:14px;}
+  pre{background:var(--vscode-textCodeBlock-background);padding:8px;border-radius:6px;font-size:.85em;}
 </style></head><body>
   <h1>Bases de datos (solo lectura)</h1>
   <p class="muted">Conecta a Oracle y SQL Server con tu driver JDBC. Solo consultas SELECT.</p>
@@ -116,7 +127,23 @@ export class DbPanel {
   <button id="setpw" class="sec">Guardar/actualizar contraseña</button>
   <div id="pwinfo" class="muted"></div>
 
-  <h2>2) Consulta (SELECT)</h2>
+  <h2>2) Pregúntale al agente (en español)</h2>
+  <p class="muted">El agente (tu GitHub Copilot) explora el esquema y arma el SQL de solo lectura por ti.</p>
+  <div id="chips">
+    <button class="chip sec" data-q="Explora la base de datos y muéstrame las tablas principales">Explorar base de datos</button>
+    <button class="chip sec" data-q="Dame los usuarios con edad de 16 años">Usuarios de 16 años</button>
+    <button class="chip sec" data-q="Une las tablas relacionadas y muéstrame un resumen (join)">Uniones (join)</button>
+    <button class="chip sec" data-q="Hazme un reporte con conteos agrupados por estado o categoría">Reporte</button>
+  </div>
+  <textarea id="ask" placeholder="Ej: dame los usuarios con edad de 16 años"></textarea>
+  <button id="askBtn">Preguntar al agente</button>
+  <span id="thinking" class="muted" style="display:none">⏳ el agente está explorando…</span>
+  <div id="genwrap" style="display:none" class="card">
+    <div class="muted">SQL generado por el agente:</div>
+    <pre id="gensql" style="white-space:pre-wrap"></pre>
+  </div>
+
+  <h2>3) O escribe tu propio SQL (SELECT)</h2>
   <textarea id="sql" placeholder="SELECT * FROM usuarios WHERE estado = 'ACTIVO'"></textarea>
   <button id="run">Ejecutar consulta</button>
   <div id="toast"></div>
@@ -159,12 +186,16 @@ export class DbPanel {
     if(m.type==='state'){ST=m;render();}
     else if(m.type==='result'){showResult(m.title,m.result);}
     else if(m.type==='toast'){toast(m.text,m.ok);}
+    else if(m.type==='thinking'){$('thinking').style.display=m.on?'inline':'none';}
+    else if(m.type==='nlResult'){$('genwrap').style.display='block';$('gensql').textContent=m.sql;showResult('Resultado (tablas: '+(m.tablesUsed||[]).join(', ')+')',m.result);}
   });
   $('conn').onchange=render;
   $('test').onclick=()=>vscode.postMessage({type:'test',name:$('conn').value});
   $('tables').onclick=()=>vscode.postMessage({type:'tables',name:$('conn').value});
   $('setpw').onclick=()=>vscode.postMessage({type:'setPw',name:$('conn').value});
   $('run').onclick=()=>vscode.postMessage({type:'query',name:$('conn').value,sql:$('sql').value});
+  $('askBtn').onclick=()=>vscode.postMessage({type:'ask',name:$('conn').value,question:$('ask').value});
+  document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{$('ask').value=b.getAttribute('data-q');vscode.postMessage({type:'ask',name:$('conn').value,question:b.getAttribute('data-q')});});
   $('add').onclick=()=>vscode.postMessage({type:'addConn',conn:{name:$('n_name').value,type:$('n_type').value,jdbcUrl:$('n_url').value,user:$('n_user').value,password:$('n_pw').value,driverJar:$('n_jar').value}});
   vscode.postMessage({type:'ready'});
 </script></body></html>`

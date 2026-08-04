@@ -48,6 +48,77 @@ export async function runQuery(context: vscode.ExtensionContext, conn: DbConn, p
   })
 }
 
+// ── Asistente de lenguaje natural (usa el modelo de GitHub Copilot) ──────────
+export async function pickModel(): Promise<vscode.LanguageModelChat> {
+  let models: vscode.LanguageModelChat[] = []
+  try { models = await vscode.lm.selectChatModels({ vendor: 'copilot' }) } catch { /* ignore */ }
+  if (!models.length) { try { models = await vscode.lm.selectChatModels() } catch { /* ignore */ } }
+  if (!models.length) { throw new Error('No hay un modelo de IA disponible. Necesitas GitHub Copilot activo en VS Code.') }
+  return models[0]
+}
+
+async function askModel(model: vscode.LanguageModelChat, prompt: string): Promise<string> {
+  const messages = [vscode.LanguageModelChatMessage.User(prompt)]
+  const resp = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token)
+  let t = ''
+  for await (const chunk of resp.text) { t += chunk }
+  return t
+}
+
+function extractSql(text: string): string {
+  const m = text.match(/```(?:sql)?\s*([\s\S]*?)```/i)
+  let sql = (m ? m[1] : text).trim()
+  const semi = sql.indexOf(';')
+  if (semi >= 0) { sql = sql.slice(0, semi) }
+  return sql.trim()
+}
+
+export interface NlResult { sql: string; tablesUsed: string[]; result: QueryResult }
+
+/** Explora el esquema con el agente y responde una pregunta en lenguaje natural (solo SELECT). */
+export async function nlExplore(context: vscode.ExtensionContext, conn: DbConn, password: string, question: string): Promise<NlResult> {
+  const model = await pickModel()
+  const dialect = conn.type === 'sqlserver' ? 'SQL Server (T-SQL)' : 'Oracle SQL'
+
+  // 1) listar tablas
+  const tablesRes = await runQuery(context, conn, password, catalogSql(conn.type, 'tables'), 5000)
+  const tableNames: string[] = tablesRes.rows.map(r => String(r[0]))
+  if (!tableNames.length) { throw new Error('No se encontraron tablas en esta conexión.') }
+
+  // 2) el agente elige tablas relevantes
+  let chosen: string[]
+  if (tableNames.length <= 12) {
+    chosen = tableNames
+  } else {
+    const pick = await askModel(model, `Base ${dialect}. Tablas disponibles:\n${tableNames.join(', ')}\n\nPregunta: "${question}"\nDevuelve SOLO los nombres de hasta 5 tablas relevantes, separados por coma. Sin explicación.`)
+    const upper = tableNames.map(t => t.toUpperCase())
+    chosen = pick.split(/[,\n]/).map(s => s.trim().replace(/[^A-Za-z0-9_$#.]/g, '')).filter(Boolean)
+      .filter(n => upper.includes(n.toUpperCase())).slice(0, 5)
+    if (!chosen.length) { chosen = tableNames.slice(0, 5) }
+  }
+
+  // 3) describir columnas de esas tablas
+  let schema = ''
+  for (const t of chosen) {
+    try {
+      const d = await runQuery(context, conn, password, catalogSql(conn.type, 'columns', t), 500)
+      schema += `\nTabla ${t}: ` + d.rows.map(r => `${r[0]} ${r[1]}`).join(', ')
+    } catch { /* tabla sin permiso, ignorar */ }
+  }
+
+  // 4) el agente escribe el SELECT
+  const sqlText = await askModel(model,
+    `Eres experto en ${dialect}. Este es el esquema disponible:${schema}\n\n` +
+    `Escribe UNA sola consulta ${dialect} de SOLO LECTURA (SELECT) que responda: "${question}". ` +
+    `Usa únicamente tablas y columnas del esquema. No expliques, devuelve solo el SQL.`)
+  const sql = extractSql(sqlText)
+  if (!/^\s*(select|with)\b/i.test(sql)) { throw new Error('El agente no generó una consulta SELECT válida. Intenta reformular la pregunta.') }
+
+  // 5) ejecutar (solo lectura)
+  const result = await runQuery(context, conn, password, sql, 300)
+  return { sql, tablesUsed: chosen, result }
+}
+
 const ident = (s: string) => String(s || '').replace(/[^A-Za-z0-9_$#.]/g, '')
 
 export function catalogSql(type: string, what: string, table?: string): string {
