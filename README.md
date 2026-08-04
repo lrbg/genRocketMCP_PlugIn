@@ -26,6 +26,29 @@ Comando **`GenRocket: Subir mis cambios a GitHub`** (o el ícono de subida en el
 
 No se guardan tokens: usa tu sesión de GitHub de VS Code para autenticar el push.
 
+## Módulo de Base de Datos (consultas de solo lectura vía el agente)
+
+Conecta a **Oracle** y **SQL Server** (varias bases, varias conexiones) y pregunta en lenguaje natural: *"dame los usuarios activos"*. El agente explora el esquema (tablas, columnas, índices) y arma el SQL.
+
+- **Solo lectura**: únicamente `SELECT` (bloquea INSERT/UPDATE/DELETE/DDL).
+- Usa **JDBC** con tus propios drivers (ojdbc para Oracle, mssql-jdbc para SQL Server): **no usa npm**.
+- Requiere **Java** instalado y la ruta a tu driver `.jar`.
+
+**Configura las conexiones** en `Settings` → busca `genrocket.dbConnections` → "Edit in settings.json". Ejemplo:
+```json
+"genrocket.dbConnections": [
+  { "name": "prod-oracle", "type": "oracle",
+    "jdbcUrl": "jdbc:oracle:thin:@//host:1521/servicio", "user": "usuario",
+    "driverJar": "C:\\drivers\\ojdbc11.jar" },
+  { "name": "reportes-mssql", "type": "sqlserver",
+    "jdbcUrl": "jdbc:sqlserver://host:1433;databaseName=MiBD;encrypt=true;trustServerCertificate=true", "user": "sa",
+    "driverJar": "C:\\drivers\\mssql-jdbc-12.6.1.jre11.jar" }
+]
+```
+La **contraseña no va aquí**: al registrar/iniciar el MCP, VS Code la pide por un input seguro (una por conexión).
+
+**Tools MCP** (en Copilot Chat): `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query` — todas de solo lectura y con parámetro `connection` para elegir la base.
+
 ## Requisitos
 
 - VS Code ^1.96

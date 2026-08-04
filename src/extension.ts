@@ -154,10 +154,26 @@ export function activate(context: vscode.ExtensionContext) {
       GENROCKET_RUNTIME_OUTDIR: c.get('runtimeOutputDir', ''),
     }
     if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
+
+    // Conexiones de BD (solo lectura): password por input seguro por conexión
+    const inputs: any[] = [
+      { id: 'grPassword', type: 'promptString', description: 'GenRocket password', password: true },
+    ]
+    const dbConns = (c.get<any[]>('dbConnections', []) || []).filter(d => d && d.name && d.jdbcUrl)
+    if (dbConns.length) {
+      env.GENROCKET_DB_JSON = JSON.stringify(dbConns.map(d => ({
+        name: d.name, type: d.type || 'oracle', jdbcUrl: d.jdbcUrl, user: d.user || '', driverJar: d.driverJar || '',
+      })))
+      for (const d of dbConns) {
+        const safe = String(d.name).toUpperCase().replace(/[^A-Z0-9]/g, '_')
+        const id = 'db_' + safe
+        inputs.push({ id, type: 'promptString', description: `Password de BD: ${d.name}`, password: true })
+        env['GENROCKET_DB_PW_' + safe] = '${input:' + id + '}'
+      }
+    }
+
     const content = {
-      inputs: [
-        { id: 'grPassword', type: 'promptString', description: 'GenRocket password', password: true },
-      ],
+      inputs,
       servers: {
         genrocket: { command: 'node', args: [serverPath], env },
       },

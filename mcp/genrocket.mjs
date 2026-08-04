@@ -12,11 +12,12 @@
  *   GENROCKET_RUNTIME_OUTDIR carpeta base de salida (default: temp del SO)
  */
 import { z } from 'zod'
-import { exec } from 'node:child_process'
+import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, delimiter as pathDelimiter } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const execAsync = promisify(exec)
 
@@ -199,6 +200,76 @@ export async function cloneDomain(fields = {})     { return grPost('/domain/copy
 export async function assignGenerator(fields = {}) { return grPost('/generator/assign', { organizationId: requireOrg(), ...fields }) }
 export async function createScenario(fields = {})  { return grPost('/scenario/create',  { organizationId: requireOrg(), ...fields }) }
 export async function publishReceiver(fields = {}) { return grPost('/receiver/publish', { organizationId: requireOrg(), ...fields }) }
+
+// ── Módulo de Base de Datos (JDBC de solo lectura: Oracle + SQL Server) ──────
+const JAVA_BIN = process.env.GENROCKET_JAVA || 'java'
+const DBQUERY_JAR = process.env.GENROCKET_DBQUERY_JAR || fileURLToPath(new URL('./db/dbquery.jar', import.meta.url))
+
+function dbConnections() {
+  try { return JSON.parse(process.env.GENROCKET_DB_JSON || '[]') } catch { return [] }
+}
+function dbEnvPwName(name) { return 'GENROCKET_DB_PW_' + String(name).toUpperCase().replace(/[^A-Z0-9]/g, '_') }
+function getConn(name) {
+  const conns = dbConnections()
+  if (!conns.length) throw new Error('No hay conexiones de BD configuradas.')
+  const c = name ? conns.find(x => x.name === name) : conns[0]
+  if (!c) throw new Error(`Conexión "${name}" no encontrada. Disponibles: ${conns.map(x => x.name).join(', ')}`)
+  return { type: 'oracle', ...c, password: process.env[dbEnvPwName(c.name)] || '' }
+}
+
+function assertSelectOnly(sql) {
+  if (!/^\s*(select|with)\b/i.test(sql || '')) throw new Error('Solo se permiten consultas SELECT (modo solo lectura).')
+}
+
+async function dbRun(conn, sql, maxRows = 500) {
+  if (!conn.driverJar) throw new Error(`La conexión "${conn.name}" no tiene driverJar (ruta al ojdbc / mssql-jdbc .jar).`)
+  if (!conn.jdbcUrl) throw new Error(`La conexión "${conn.name}" no tiene jdbcUrl.`)
+  assertSelectOnly(sql)
+  const cp = `${conn.driverJar}${pathDelimiter}${DBQUERY_JAR}`
+  return new Promise((resolve, reject) => {
+    const child = spawn(JAVA_BIN, ['-cp', cp, 'DbQuery'], {
+      env: { ...process.env, DB_URL: conn.jdbcUrl, DB_USER: conn.user || '', DB_PASSWORD: conn.password || '', DB_MAXROWS: String(maxRows) },
+    })
+    let out = '', err = ''
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { err += d })
+    child.on('error', e => reject(new Error(`No se pudo ejecutar java: ${e.message}`)))
+    child.on('close', () => {
+      let j
+      try { j = JSON.parse(out || '{}') } catch { return reject(new Error(err.trim() || out.trim() || 'Sin salida del helper JDBC')) }
+      if (j.error) reject(new Error(j.error)); else resolve(j)
+    })
+    child.stdin.write(sql); child.stdin.end()
+  })
+}
+
+function fmtRows(j, limit = 50) {
+  const cols = j.columns || [], rows = j.rows || []
+  if (!cols.length) return '(sin columnas)'
+  const head = cols.join(' | ')
+  const body = rows.slice(0, limit).map(r => r.map(v => v === null ? '' : String(v)).join(' | ')).join('\n')
+  const extra = rows.length > limit ? `\n… (${rows.length - limit} filas más; total ${j.rowCount})` : ''
+  return `${head}\n${'-'.repeat(Math.min(head.length, 80))}\n${body}${extra}`
+}
+
+const ident = (s) => String(s || '').replace(/[^A-Za-z0-9_$#.]/g, '')
+function catalogSql(type, what, table) {
+  const t = ident(table)
+  if (type === 'sqlserver') {
+    if (what === 'test')    return 'SELECT 1 AS OK'
+    if (what === 'tables')  return "SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS TABLA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE' ORDER BY 1"
+    if (what === 'columns') return `SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH AS LEN, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='${t}' ORDER BY ORDINAL_POSITION`
+    if (what === 'indexes') return `SELECT i.name AS INDICE, c.name AS COLUMNA FROM sys.indexes i JOIN sys.index_columns ic ON i.object_id=ic.object_id AND i.index_id=ic.index_id JOIN sys.columns c ON ic.object_id=c.object_id AND ic.column_id=c.column_id WHERE i.object_id=OBJECT_ID('${t}') ORDER BY i.name, ic.key_ordinal`
+    if (what === 'sample')  return `SELECT TOP {N} * FROM ${t}`
+  } else {
+    if (what === 'test')    return 'SELECT 1 AS OK FROM DUAL'
+    if (what === 'tables')  return 'SELECT table_name AS TABLA FROM user_tables ORDER BY table_name'
+    if (what === 'columns') return `SELECT column_name, data_type, data_length AS LEN, nullable FROM user_tab_columns WHERE table_name = UPPER('${t}') ORDER BY column_id`
+    if (what === 'indexes') return `SELECT i.index_name AS INDICE, c.column_name AS COLUMNA FROM user_indexes i JOIN user_ind_columns c ON i.index_name=c.index_name WHERE c.table_name = UPPER('${t}') ORDER BY i.index_name, c.column_position`
+    if (what === 'sample')  return `SELECT * FROM ${t} WHERE ROWNUM <= {N}`
+  }
+  return ''
+}
 
 // ── Helpers de formato ───────────────────────────────────────────
 const ok  = (text) => ({ content: [{ type: 'text', text }] })
@@ -403,4 +474,54 @@ export function registerGenRocketTools(server) {
   runtimeAlias('genrocket_export_sql',      'Genera y exporta a SQL: ejecuta el Runtime. Requiere que el escenario tenga un receiver SQL/BD.')
   runtimeAlias('genrocket_mask_database',   'Enmascara datos (masking): ejecuta el Runtime. El enmascaramiento se configura en el dominio/escenario.')
   runtimeAlias('genrocket_subset_database', 'Subset de base de datos: ejecuta el Runtime. El subsetting se configura en el escenario.')
+
+  // ── Base de datos (JDBC solo lectura: Oracle + SQL Server) ───────
+  server.tool('db_list_connections', 'Lista las conexiones de base de datos configuradas (nombre y tipo).', {},
+    async () => {
+      const conns = dbConnections()
+      if (!conns.length) return bad('No hay conexiones de BD configuradas. Agrégalas en los ajustes del plugin (genrocket.dbConnections).')
+      return ok('Conexiones:\n' + conns.map(c => `- ${c.name} (${c.type || 'oracle'})`).join('\n'))
+    })
+
+  server.tool('db_test_connection', 'Prueba una conexión de BD (SELECT 1). Solo lectura.',
+    { connection: z.string().optional().describe('Nombre de la conexión (default: la primera)') },
+    async ({ connection }) => {
+      try { const c = getConn(connection); await dbRun(c, catalogSql(c.type, 'test')); return ok(`Conexión "${c.name}" (${c.type}) OK.`) }
+      catch (e) { return bad(e.message) }
+    })
+
+  server.tool('db_list_tables', 'Lista las tablas de una conexión. Solo lectura. Úsalo para explorar antes de consultar.',
+    { connection: z.string().optional() },
+    async ({ connection }) => {
+      try { const c = getConn(connection); const j = await dbRun(c, catalogSql(c.type, 'tables'), 3000); return ok(fmtRows(j, 800)) }
+      catch (e) { return bad(e.message) }
+    })
+
+  server.tool('db_describe_table', 'Describe las columnas (nombre, tipo, nullable) de una tabla. Solo lectura.',
+    { table: z.string().describe('Nombre de la tabla'), connection: z.string().optional() },
+    async ({ table, connection }) => {
+      try { const c = getConn(connection); const j = await dbRun(c, catalogSql(c.type, 'columns', table), 1000); return ok(fmtRows(j, 300)) }
+      catch (e) { return bad(e.message) }
+    })
+
+  server.tool('db_list_indexes', 'Lista los índices y sus columnas de una tabla. Solo lectura.',
+    { table: z.string(), connection: z.string().optional() },
+    async ({ table, connection }) => {
+      try { const c = getConn(connection); const j = await dbRun(c, catalogSql(c.type, 'indexes', table), 1000); return ok(fmtRows(j, 300)) }
+      catch (e) { return bad(e.message) }
+    })
+
+  server.tool('db_sample', 'Muestra las primeras N filas de una tabla. Solo lectura.',
+    { table: z.string(), n: z.number().int().positive().optional(), connection: z.string().optional() },
+    async ({ table, n = 20, connection }) => {
+      try { const c = getConn(connection); const sql = catalogSql(c.type, 'sample', table).replace('{N}', String(n)); const j = await dbRun(c, sql, n); return ok(fmtRows(j, n)) }
+      catch (e) { return bad(e.message) }
+    })
+
+  server.tool('db_query', 'Ejecuta una consulta SELECT de solo lectura en la conexión indicada y devuelve las filas. Explora antes con db_list_tables / db_describe_table para saber tablas y columnas.',
+    { sql: z.string().describe('Consulta SELECT (solo lectura)'), connection: z.string().optional(), maxRows: z.number().int().positive().optional() },
+    async ({ sql, connection, maxRows = 500 }) => {
+      try { const c = getConn(connection); const j = await dbRun(c, sql, maxRows); return ok(fmtRows(j, Math.min(maxRows, 200))) }
+      catch (e) { return bad(e.message) }
+    })
 }

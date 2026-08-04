@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "lrbg",
   "engines": { "vscode": "^1.96.0" },
   "categories": ["Other", "AI", "Data Science"],
@@ -39,6 +39,22 @@
           "type": "string",
           "default": "",
           "description": "Carpeta base de salida del Runtime. Vacío usa una carpeta temporal del sistema."
+        },
+        "genrocket.dbConnections": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Conexiones de base de datos para consultas de **solo lectura** (Oracle y SQL Server). La contraseña NO se pone aquí: se pide de forma segura al iniciar el MCP.",
+          "items": {
+            "type": "object",
+            "required": ["name", "jdbcUrl", "driverJar"],
+            "properties": {
+              "name": { "type": "string", "description": "Nombre para identificar la conexión (ej. prod-oracle)" },
+              "type": { "type": "string", "enum": ["oracle", "sqlserver"], "default": "oracle", "description": "Motor de base de datos" },
+              "jdbcUrl": { "type": "string", "description": "URL JDBC. Oracle: jdbc:oracle:thin:@//host:1521/servicio  |  SQL Server: jdbc:sqlserver://host:1433;databaseName=DB;encrypt=true;trustServerCertificate=true" },
+              "user": { "type": "string", "description": "Usuario de la BD" },
+              "driverJar": { "type": "string", "description": "Ruta al driver JDBC (.jar): ojdbc para Oracle, mssql-jdbc para SQL Server" }
+            }
+          }
         }
       }
     },
