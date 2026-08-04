@@ -92,7 +92,7 @@ export class GitPanel {
         if (m.createBranch) { await git.checkout(this.workingDir, branch, true) }
         else if (branch !== this.current) { await git.checkout(this.workingDir, branch, false) }
         const { name, email } = git.defaultAuthor(this.session)
-        const res = await git.commitAndPush(this.workingDir, m.message.trim(), branch, this.session.accessToken, name, email)
+        const res = await git.commitAndPush(this.workingDir, m.message.trim(), branch, this.session.accessToken, name, email, !!m.allowEmpty)
         this.current = await git.currentBranch(this.workingDir).catch(() => branch)
         const local = await git.listBranches(this.workingDir).catch(() => [])
         for (const b of local) { if (!this.branches.includes(b)) { this.branches.push(b) } }
@@ -190,6 +190,7 @@ export class GitPanel {
     <div><span class="num">5</span><span class="title">Escribe qué hiciste y súbelo</span></div>
     <div id="changes" class="muted"></div>
     <textarea id="message" placeholder="Ej: Agregué los escenarios de pruebas"></textarea>
+    <label style="font-weight:400;font-size:.85em;margin-top:6px;"><input type="checkbox" id="empty"> Crear commit aunque no haya archivos (commit vacío)</label>
     <button id="commit" class="big">Guardar y subir a GitHub</button>
   </div>
 
@@ -248,6 +249,7 @@ export class GitPanel {
     createBranch: $('brNew').checked,
     branch: $('brNew').checked ? $('newBranch').value : $('branches').value,
     message: $('message').value,
+    allowEmpty: $('empty').checked,
   });
   vscode.postMessage({ type:'ready' });
 </script>

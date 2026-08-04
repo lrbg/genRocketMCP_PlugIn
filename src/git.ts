@@ -120,16 +120,20 @@ export async function changedFiles(dir: string): Promise<string[]> {
 }
 
 export async function commitAndPush(
-  dir: string, message: string, branch: string, token: string, name: string, email: string,
+  dir: string, message: string, branch: string, token: string, name: string, email: string, allowEmpty = false,
 ): Promise<{ committed: boolean }> {
   await git(dir, ['add', '-A'])
   const status = (await git(dir, ['status', '--porcelain'])).stdout.trim()
-  if (status) {
-    await git(dir, ['-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message])
+  let committed = false
+  if (status || allowEmpty) {
+    const args = ['-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message]
+    if (!status && allowEmpty) { args.push('--allow-empty') }  // commit vacío (sin archivos)
+    await git(dir, args)
+    committed = true
   }
-  // Sube la rama (crea la rama remota aunque no haya commit nuevo). Si no hay nada, "Everything up-to-date".
+  // Sube la rama (crea la rama remota aunque no haya commit nuevo).
   await git(dir, ['push', '-u', 'origin', `HEAD:${branch}`], token)
-  return { committed: !!status }
+  return { committed }
 }
 
 export function defaultAuthor(session: vscode.AuthenticationSession): { name: string; email: string } {
