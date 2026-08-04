@@ -502,22 +502,20 @@ export function registerGenRocketTools(server) {
     }
   )
 
-  // ── Escritura (crear/clonar/asignar/publicar) ────────────────────
-  const writeTool = (name, desc, fn) => server.tool(
-    name, desc,
-    { fields: z.record(z.any()).describe('Campos del objeto segun la API de GenRocket (organizationId se agrega solo). Ej: projectName, versionNumber, name, domainId, ...') },
-    async ({ fields }) => {
-      try {
-        const d = await fn(fields || {})
-        return ok(`OK ${name}:\n${JSON.stringify(d, null, 2).slice(0, 2500)}`)
-      } catch (e) { return bad(`${name}: ${e.message}`) }
-    }
+  // ── Autoría (crear dominios/atributos, vincular generadores, escenarios) ──
+  // NO se expone por REST de forma confiable: la vinculación de generadores y la
+  // creación se hacen en la app web (Designer), con sesión web propia. Se ofrece
+  // solo un enlace al Designer para que el usuario lo haga ahí.
+  server.tool(
+    'genrocket_open_designer',
+    'Devuelve el enlace al Designer web de GenRocket para AUTORÍA (crear dominios, atributos, vincular generadores, escenarios). Estas operaciones NO están soportadas por la API REST: se hacen en el Designer. Usa esto cuando el usuario quiera crear/editar/vincular generadores.',
+    {},
+    async () => ok(
+      `La creación de atributos y la VINCULACIÓN de generadores se hace en el GenRocket Designer (app web), no por API.\n` +
+      `Ábrelo aquí: ${grBase().replace(/\/rest$/, '')}\n\n` +
+      `Desde el plugin sí puedes: explorar (dominios, atributos, escenarios, chains), ver el catálogo y sugerir generadores, descargar .grs, correr el Runtime y consultar bases de datos.`,
+    ),
   )
-  writeTool('genrocket_create_domain',    'Crea un dominio en GenRocket (escritura). Campos tipicos: projectName, versionNumber, name, parent.', createDomain)
-  writeTool('genrocket_clone_domain',     'Clona/copia un dominio (escritura, /domain/copy). Campos: domainId y destino segun la API.', cloneDomain)
-  writeTool('genrocket_assign_generator', 'Asigna un generador a un atributo (escritura). Campos: domainId, name (atributo) y datos del generador.', assignGenerator)
-  writeTool('genrocket_create_scenario',  'Crea un escenario (escritura). Campos: projectName, versionNumber, name, domainId, receiver, etc.', createScenario)
-  writeTool('genrocket_publish_receiver', 'Publica un receiver a un escenario (escritura).', publishReceiver)
 
   server.tool(
     'genrocket_available_generators',
@@ -556,37 +554,6 @@ export function registerGenRocketTools(server) {
     }
   )
 
-  server.tool(
-    'genrocket_create_attribute',
-    'Crea un atributo con su generador en un dominio (escritura). El generador se envia como OBJETO (no string). Flujo recomendado: (1) genrocket_suggest_generators para elegir el tipo, (2) pregunta al usuario, (3) llama esto con: projectName, domainId, name, type (metadataType: String/Integer/Date/Reference/Boolean...), generator (tipo del catalogo, ej FlexibleDateRangeGen) y parameters (objeto nombre:valor, opcional). Al terminar, VERIFICA con genrocket_list_generators que el generador quedo asignado (la API puede responder success sin asignarlo si algo no coincide).',
-    {
-      projectName: z.string().describe('Nombre del proyecto'),
-      version: z.string().optional().describe('Version (default 1.0)'),
-      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
-      name: z.string().describe('Nombre del atributo'),
-      type: z.string().optional().describe('Tipo del atributo (metadataType), ej. String, Integer, Date, Reference, Boolean. Default String'),
-      generator: z.string().optional().describe('Tipo de generador (ej. FlexibleDateRangeGen, RangeGen). De genrocket_suggest_generators'),
-      parameters: z.record(z.any()).optional().describe('Parametros del generador como objeto nombre:valor (ej. {"startDate":"2000-01-01","endDate":"2020-12-31"})'),
-    },
-    async ({ projectName, version = '1.0', domainId, name, type = 'String', generator, parameters }) => {
-      try {
-        const gens = generator ? [{
-          name: 'gen1', sequenceNumber: 1, generator,
-          parameters: Object.entries(parameters || {}).map(([n, v]) => ({ name: n, value: String(v), values: [] })),
-        }] : []
-        const payload = {
-          organizationId: requireOrg(), projectName, versionNumber: version,
-          domainId, name, metadataType: type, generators: gens,
-        }
-        const d = await grPost('/attribute/create', payload)
-        return ok(
-          `create_attribute enviado (tipo ${type}, generador ${generator || '(ninguno)'}).\n` +
-          `Respuesta: ${JSON.stringify(d).slice(0, 800)}\n\n` +
-          `IMPORTANTE: verifica con genrocket_list_generators (domainId="${domainId}", attributeName="${name}") que el generador quedo asignado.`,
-        )
-      } catch (e) { return bad(`create_attribute: ${e.message}`) }
-    }
-  )
 
   // ── Runtime (generacion / exportacion / mask / subset) ───────────
   // Todas ejecutan el Runtime local sobre el escenario; el formato de salida y las
