@@ -211,6 +211,27 @@ export async function createScenario(fields = {})  { return grPost('/scenario/cr
 export async function publishReceiver(fields = {}) { return grPost('/receiver/publish', { organizationId: requireOrg(), ...fields }) }
 export async function createAttribute(fields = {})  { return grPost('/attribute/create',  { organizationId: requireOrg(), ...fields }) }
 
+// ── Autoría por REST (payloads confirmados del spec oficial de GenRocket) ────
+export async function createAttr(domainId, name, autoGenerator = false) {
+  return grPost('/attribute/create', { organizationId: requireOrg(), domainId, name, autoGenerator })
+}
+export async function addGenerator(domainId, attributeName, genType) {
+  return grPost('/generator/add', { organizationId: requireOrg(), domainId, name: attributeName, genType })
+}
+export async function deleteGenerators(domainId, attributeName) {
+  return grPost('/generator/deleteAll', { organizationId: requireOrg(), domainId, name: attributeName })
+}
+export async function setGeneratorParameter(domainId, attributeName, genName, parameterName, parameterValue) {
+  return grPost('/generatorParameter/update', {
+    organizationId: requireOrg(), domainId, name: attributeName, genName,
+    parameterName, parameterValue: String(parameterValue),
+  })
+}
+export async function listGeneratorsOf(domainId, attributeName) {
+  const d = await grPost('/generator/list', { organizationId: requireOrg(), domainId, name: attributeName })
+  return d?.generators ?? []
+}
+
 // Catálogo de generadores (cacheado en el proceso para que sea rápido)
 let _genCache = null
 async function fetchAllGenerators() {
@@ -502,19 +523,80 @@ export function registerGenRocketTools(server) {
     }
   )
 
-  // ── Autoría (crear dominios/atributos, vincular generadores, escenarios) ──
-  // NO se expone por REST de forma confiable: la vinculación de generadores y la
-  // creación se hacen en la app web (Designer), con sesión web propia. Se ofrece
-  // solo un enlace al Designer para que el usuario lo haga ahí.
+  // ── Autoría por REST (endpoints confirmados del spec oficial) ────────────
   server.tool(
-    'genrocket_open_designer',
-    'Devuelve el enlace al Designer web de GenRocket para AUTORÍA (crear dominios, atributos, vincular generadores, escenarios). Estas operaciones NO están soportadas por la API REST: se hacen en el Designer. Usa esto cuando el usuario quiera crear/editar/vincular generadores.',
-    {},
-    async () => ok(
-      `La creación de atributos y la VINCULACIÓN de generadores se hace en el GenRocket Designer (app web), no por API.\n` +
-      `Ábrelo aquí: ${grBase().replace(/\/rest$/, '')}\n\n` +
-      `Desde el plugin sí puedes: explorar (dominios, atributos, escenarios, chains), ver el catálogo y sugerir generadores, descargar .grs, correr el Runtime y consultar bases de datos.`,
-    ),
+    'genrocket_create_attribute',
+    'Crea un atributo en un dominio (POST /attribute/create). Payload real: domainId, name, autoGenerator. Si autoGenerator=true, GenRocket asigna un generador por defecto; si vas a poner uno especifico usa false y luego genrocket_add_generator (o mejor genrocket_create_attribute_with_generator).',
+    {
+      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
+      name: z.string().describe('Nombre del atributo'),
+      autoGenerator: z.boolean().optional().describe('true = generador por defecto (default false)'),
+    },
+    async ({ domainId, name, autoGenerator = false }) => {
+      try { await createAttr(domainId, name, autoGenerator); return ok(`Atributo "${name}" creado.${autoGenerator ? ' (con generador por defecto)' : ''}`) }
+      catch (e) { return bad(`create_attribute: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_add_generator',
+    'Agrega un generador a un atributo (POST /generator/add). Payload: domainId, name (atributo), genType (ej. FlexibleDateRangeGen; usa genrocket_suggest_generators).',
+    { domainId: z.string(), attributeName: z.string(), genType: z.string() },
+    async ({ domainId, attributeName, genType }) => {
+      try { await addGenerator(domainId, attributeName, genType); return ok(`Generador "${genType}" agregado a "${attributeName}".`) }
+      catch (e) { return bad(`add_generator: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_set_generator_parameter',
+    'Configura un parametro de un generador ya agregado (POST /generatorParameter/update): domainId, name (atributo), genName (posicion, ej. gen1), parameterName, parameterValue.',
+    {
+      domainId: z.string(), attributeName: z.string(),
+      genName: z.string().optional().describe('Posicion del generador (default gen1)'),
+      parameterName: z.string(), parameterValue: z.union([z.string(), z.number(), z.boolean()]),
+    },
+    async ({ domainId, attributeName, genName = 'gen1', parameterName, parameterValue }) => {
+      try { await setGeneratorParameter(domainId, attributeName, genName, parameterName, parameterValue); return ok(`Parametro ${parameterName}="${parameterValue}" seteado en ${genName}.`) }
+      catch (e) { return bad(`set_generator_parameter: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_delete_generators',
+    'Quita TODOS los generadores de un atributo (POST /generator/deleteAll). Util antes de asignar uno nuevo.',
+    { domainId: z.string(), attributeName: z.string() },
+    async ({ domainId, attributeName }) => {
+      try { await deleteGenerators(domainId, attributeName); return ok(`Generadores de "${attributeName}" eliminados.`) }
+      catch (e) { return bad(`delete_generators: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_create_attribute_with_generator',
+    'TODO EN UNO: crea el atributo, le asigna el generador con sus parametros y verifica. Recomendado: (1) genrocket_suggest_generators para el genType, (2) PREGUNTA al usuario, (3) llama esto con domainId, name, genType y parameters (objeto nombre:valor, opcional).',
+    {
+      domainId: z.string(), name: z.string().describe('Nombre del atributo'),
+      genType: z.string().optional().describe('Tipo de generador (de genrocket_suggest_generators)'),
+      parameters: z.record(z.any()).optional().describe('Parametros del generador (objeto nombre:valor)'),
+    },
+    async ({ domainId, name, genType, parameters }) => {
+      try {
+        await createAttr(domainId, name, !genType)
+        const steps = ['atributo creado']
+        if (genType) {
+          await addGenerator(domainId, name, genType)
+          steps.push(`generador ${genType} agregado`)
+          for (const [pn, pv] of Object.entries(parameters || {})) {
+            await setGeneratorParameter(domainId, name, 'gen1', pn, pv)
+            steps.push(`${pn}=${pv}`)
+          }
+        }
+        const gens = await listGeneratorsOf(domainId, name).catch(() => [])
+        const asignados = gens.map(g => g.generatorType || g.generator || g.name).join(', ') || '(ninguno)'
+        return ok(`Listo (${steps.join(' | ')}).\nGeneradores en "${name}": ${asignados}`)
+      } catch (e) { return bad(`create_attribute_with_generator: ${e.message}`) }
+    }
   )
 
   server.tool(
