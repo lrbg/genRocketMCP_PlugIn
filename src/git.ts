@@ -14,13 +14,25 @@ export async function getSession(createIfNone: boolean): Promise<vscode.Authenti
 }
 
 export async function listRepos(token: string): Promise<Repo[]> {
-  const res = await fetch(
-    'https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member',
-    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } },
-  )
-  if (!res.ok) { throw new Error(`GitHub API ${res.status}`) }
-  const arr = (await res.json()) as any[]
-  return arr.map(r => ({ fullName: r.full_name, name: r.name, owner: r.owner.login, defaultBranch: r.default_branch, isPrivate: r.private }))
+  const all: Repo[] = []
+  const seen = new Set<string>()
+  // Trae TODAS las páginas (hasta 20 = 2000 repos) y de las dos rutas útiles.
+  for (let page = 1; page <= 20; page++) {
+    const res = await fetch(
+      `https://api.github.com/user/repos?per_page=100&page=${page}&sort=full_name&affiliation=owner,collaborator,organization_member`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } },
+    )
+    if (!res.ok) { throw new Error(`GitHub API ${res.status}`) }
+    const arr = (await res.json()) as any[]
+    for (const r of arr) {
+      if (seen.has(r.full_name)) { continue }
+      seen.add(r.full_name)
+      all.push({ fullName: r.full_name, name: r.name, owner: r.owner.login, defaultBranch: r.default_branch, isPrivate: r.private })
+    }
+    if (arr.length < 100) { break }
+  }
+  all.sort((a, b) => a.fullName.localeCompare(b.fullName))
+  return all
 }
 
 function authArgs(token?: string): string[] {
