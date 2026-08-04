@@ -242,6 +242,14 @@ export async function previewAttribute(domainId, attributeName, loopCount = 10, 
   return grPost('/attribute/preview', body)
 }
 
+// ── Autoría en lote ──────────────────────────────────────────────────────────
+export async function createDomainRest(projectName, version, name, description = '') {
+  return grPost('/domain/create', { organizationId: requireOrg(), projectName, versionNumber: version, name, description })
+}
+export async function createAllAttributes(domainId, names, autoGenerator = true) {
+  return grPost('/attribute/createAll', { organizationId: requireOrg(), domainId, attributes: names, autoGenerator })
+}
+
 // Catálogo de generadores (cacheado en el proceso para que sea rápido)
 let _genCache = null
 async function fetchAllGenerators() {
@@ -583,6 +591,57 @@ export function registerGenRocketTools(server) {
     async ({ domainId, name, autoGenerator = false }) => {
       try { await createAttr(domainId, name, autoGenerator); return ok(`Atributo "${name}" creado.${autoGenerator ? ' (con generador por defecto)' : ''}`) }
       catch (e) { return bad(`create_attribute: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_create_domain',
+    'Crea un dominio en un proyecto (POST /domain/create). Payload: projectName, versionNumber, name, description. Devuelve el dominio (usa genrocket_list_domains para obtener su domainId despues).',
+    {
+      projectName: z.string(),
+      version: z.string().optional().describe('Version (default 1.0)'),
+      name: z.string().describe('Nombre del dominio'),
+      description: z.string().optional(),
+    },
+    async ({ projectName, version = '1.0', name, description = '' }) => {
+      try { const d = await createDomainRest(projectName, version, name, description); return ok(`Dominio "${name}" creado en ${projectName} v${version}. ${JSON.stringify(d).slice(0, 300)}`) }
+      catch (e) { return bad(`create_domain: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_bulk_create_attributes',
+    'AUTORIA EN LOTE: crea MUCHOS atributos de un dominio en un solo paso (POST /attribute/createAll) y opcionalmente asigna un generador especifico a cada uno. Pasa "attributes" como lista de nombres (["id","nombre","fecha"]) o como lista de objetos {name, generator?, parameters?} para controlar el generador. Con autoGenerator=true (default) GenRocket asigna un generador por defecto a cada atributo; los que traigan "generator" se sobreescriben con ese.',
+    {
+      domainId: z.string().describe('externalId del dominio'),
+      attributes: z.array(z.union([
+        z.string(),
+        z.object({ name: z.string(), generator: z.string().optional(), parameters: z.record(z.any()).optional() }),
+      ])).describe('Lista de nombres, o de objetos {name, generator?, parameters?}'),
+      autoGenerator: z.boolean().optional().describe('Asignar generador por defecto a cada atributo (default true)'),
+    },
+    async ({ domainId, attributes, autoGenerator = true }) => {
+      try {
+        const norm = attributes.map(a => typeof a === 'string' ? { name: a } : a)
+        const names = norm.map(a => a.name)
+        await createAllAttributes(domainId, names, autoGenerator)
+        const withGen = norm.filter(a => a.generator)
+        const done = []
+        for (const a of withGen) {
+          try {
+            await deleteGenerators(domainId, a.name).catch(() => {})
+            await addGenerator(domainId, a.name, a.generator)
+            for (const [pn, pv] of Object.entries(a.parameters || {})) {
+              await setGeneratorParameter(domainId, a.name, 'gen1', pn, pv)
+            }
+            done.push(`${a.name}→${a.generator}`)
+          } catch (e) { done.push(`${a.name}: ERROR ${e.message}`) }
+        }
+        return ok(
+          `Creados ${names.length} atributos: ${names.join(', ')}.` +
+          (withGen.length ? `\nGeneradores asignados: ${done.join(' | ')}` : ' (con generador por defecto)'),
+        )
+      } catch (e) { return bad(`bulk_create_attributes: ${e.message}`) }
     }
   )
 
