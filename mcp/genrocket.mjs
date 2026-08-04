@@ -15,18 +15,27 @@ import { z } from 'zod'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, readdir, stat } from 'node:fs/promises'
+import { readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, delimiter as pathDelimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const execAsync = promisify(exec)
 
-const BASE_RAW = process.env.GENROCKET_BASE_URL || 'https://app.genrocket.com'
-const USERNAME = process.env.GENROCKET_USERNAME || ''
-const PASSWORD = process.env.GENROCKET_PASSWORD || ''
-const ORG_ID   = process.env.GENROCKET_ORG_ID   || ''
-const RUNTIME_CMD    = process.env.GENROCKET_RUNTIME_CMD || ''
-const RUNTIME_OUTDIR = process.env.GENROCKET_RUNTIME_OUTDIR || join(tmpdir(), 'genrocket-runtime')
+// Config: preferimos un archivo local (GENROCKET_CONFIG_FILE) escrito por la
+// extensión; si no existe, caemos a variables de entorno.
+let FILECFG = {}
+try {
+  const f = process.env.GENROCKET_CONFIG_FILE
+  if (f && existsSync(f)) { FILECFG = JSON.parse(readFileSync(f, 'utf8')) }
+} catch { /* ignore */ }
+
+const BASE_RAW = FILECFG.baseUrl || process.env.GENROCKET_BASE_URL || 'https://app.genrocket.com'
+const USERNAME = FILECFG.username || process.env.GENROCKET_USERNAME || ''
+const PASSWORD = FILECFG.password || process.env.GENROCKET_PASSWORD || ''
+const ORG_ID   = FILECFG.organizationId || process.env.GENROCKET_ORG_ID || ''
+const RUNTIME_CMD    = FILECFG.runtimeCommand || process.env.GENROCKET_RUNTIME_CMD || ''
+const RUNTIME_OUTDIR = FILECFG.runtimeOutputDir || process.env.GENROCKET_RUNTIME_OUTDIR || join(tmpdir(), 'genrocket-runtime')
 
 // Normaliza el host a "<origin>/rest" (acepta con/sin protocolo, con/sin /rest final).
 function grBase() {
@@ -206,6 +215,7 @@ const JAVA_BIN = process.env.GENROCKET_JAVA || 'java'
 const DBQUERY_JAR = process.env.GENROCKET_DBQUERY_JAR || fileURLToPath(new URL('./db/dbquery.jar', import.meta.url))
 
 function dbConnections() {
+  if (Array.isArray(FILECFG.dbConnections)) { return FILECFG.dbConnections }
   try { return JSON.parse(process.env.GENROCKET_DB_JSON || '[]') } catch { return [] }
 }
 function dbEnvPwName(name) { return 'GENROCKET_DB_PW_' + String(name).toUpperCase().replace(/[^A-Z0-9]/g, '_') }
@@ -214,7 +224,7 @@ function getConn(name) {
   if (!conns.length) throw new Error('No hay conexiones de BD configuradas.')
   const c = name ? conns.find(x => x.name === name) : conns[0]
   if (!c) throw new Error(`Conexión "${name}" no encontrada. Disponibles: ${conns.map(x => x.name).join(', ')}`)
-  return { type: 'oracle', ...c, password: process.env[dbEnvPwName(c.name)] || '' }
+  return { type: 'oracle', ...c, password: c.password || process.env[dbEnvPwName(c.name)] || '' }
 }
 
 function assertSelectOnly(sql) {

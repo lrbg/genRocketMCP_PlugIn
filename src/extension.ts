@@ -144,51 +144,46 @@ export function activate(context: vscode.ExtensionContext) {
 
   reg('genrocket.registerMcpServer', async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent
-    const ws = vscode.workspace.workspaceFolders?.[0]
-    if (!ws) { if (!silent) { vscode.window.showErrorMessage('Abre una carpeta/workspace para registrar el MCP.') } return }
     const c = vscode.workspace.getConfiguration('genrocket')
-    const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
     const caFile = await buildCaBundle(context)  // CA corporativa para que el MCP confíe en el proxy TLS
-    const env: Record<string, string> = {
-      GENROCKET_BASE_URL: c.get('baseUrl', ''),
-      GENROCKET_USERNAME: c.get('username', ''),
-      GENROCKET_ORG_ID: c.get('organizationId', ''),
-      GENROCKET_PASSWORD: '${input:grPassword}',
-      GENROCKET_RUNTIME_CMD: c.get('runtimeCommand', ''),
-      GENROCKET_RUNTIME_OUTDIR: c.get('runtimeOutputDir', ''),
-    }
-    if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
 
-    // Conexiones de BD (solo lectura): password por input seguro por conexión
-    const inputs: any[] = [
-      { id: 'grPassword', type: 'promptString', description: 'GenRocket password', password: true },
-    ]
+    // Contraseñas desde SecretStorage (nunca en el repo)
+    const grPassword = (await context.secrets.get(SECRET_KEY)) || ''
     const dbConns = (c.get<any[]>('dbConnections', []) || []).filter(d => d && d.name && d.jdbcUrl)
-    if (dbConns.length) {
-      env.GENROCKET_DB_JSON = JSON.stringify(dbConns.map(d => ({
-        name: d.name, type: d.type || 'oracle', jdbcUrl: d.jdbcUrl, user: d.user || '', driverJar: d.driverJar || '',
-      })))
-      for (const d of dbConns) {
-        const safe = String(d.name).toUpperCase().replace(/[^A-Z0-9]/g, '_')
-        const id = 'db_' + safe
-        inputs.push({ id, type: 'promptString', description: `Password de BD: ${d.name}`, password: true })
-        env['GENROCKET_DB_PW_' + safe] = '${input:' + id + '}'
-      }
+    const dbOut: any[] = []
+    for (const d of dbConns) {
+      const pw = (await context.secrets.get('db.password.' + d.name)) || ''
+      dbOut.push({ name: d.name, type: d.type || 'oracle', jdbcUrl: d.jdbcUrl, user: d.user || '', driverJar: d.driverJar || '', password: pw })
     }
 
-    const content = {
-      inputs,
-      servers: {
-        genrocket: { command: 'node', args: [serverPath], env },
-      },
+    // Archivo de config local (fuera del repo, en el almacenamiento del usuario)
+    const fullCfg = {
+      baseUrl: c.get('baseUrl', ''),
+      username: c.get('username', ''),
+      password: grPassword,
+      organizationId: c.get('organizationId', ''),
+      runtimeCommand: c.get('runtimeCommand', ''),
+      runtimeOutputDir: c.get('runtimeOutputDir', ''),
+      dbConnections: dbOut,
     }
+    await vscode.workspace.fs.createDirectory(context.globalStorageUri)
+    const cfgFile = vscode.Uri.joinPath(context.globalStorageUri, 'genrocket-config.json')
+    await vscode.workspace.fs.writeFile(cfgFile, Buffer.from(JSON.stringify(fullCfg, null, 2), 'utf8'))
+
+    // mcp.json solo apunta al archivo de config (sin variables vacías ni prompts)
+    const ws = vscode.workspace.workspaceFolders?.[0]
+    if (!ws) { if (!silent) { vscode.window.showWarningMessage('Configuración guardada. Abre una carpeta/workspace para registrar el MCP en Copilot Chat.') } return }
+    const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
+    const env: Record<string, string> = { GENROCKET_CONFIG_FILE: cfgFile.fsPath }
+    if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
+    const content = { servers: { genrocket: { command: 'node', args: [serverPath], env } } }
     const dir = vscode.Uri.joinPath(ws.uri, '.vscode')
     const file = vscode.Uri.joinPath(dir, 'mcp.json')
     try {
       await vscode.workspace.fs.createDirectory(dir)
       await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(content, null, 2), 'utf8'))
       if (!silent) {
-        vscode.window.showInformationMessage('MCP registrado en .vscode/mcp.json. Ábrelo y presiona "Start" (o Restart si ya estaba corriendo) para usarlo en Copilot Chat.')
+        vscode.window.showInformationMessage('MCP registrado en .vscode/mcp.json. Ábrelo y presiona "Start" (o "Restart" si ya estaba corriendo) para usarlo en Copilot Chat.')
         vscode.window.showTextDocument(file)
       }
     } catch (e: any) {
