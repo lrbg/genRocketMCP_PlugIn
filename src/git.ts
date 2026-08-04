@@ -121,10 +121,15 @@ export async function changedFiles(dir: string): Promise<string[]> {
 
 export async function commitAndPush(
   dir: string, message: string, branch: string, token: string, name: string, email: string,
-): Promise<void> {
+): Promise<{ committed: boolean }> {
   await git(dir, ['add', '-A'])
-  await git(dir, ['-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message])
+  const status = (await git(dir, ['status', '--porcelain'])).stdout.trim()
+  if (status) {
+    await git(dir, ['-c', `user.name=${name}`, '-c', `user.email=${email}`, 'commit', '-m', message])
+  }
+  // Sube la rama (crea la rama remota aunque no haya commit nuevo). Si no hay nada, "Everything up-to-date".
   await git(dir, ['push', '-u', 'origin', `HEAD:${branch}`], token)
+  return { committed: !!status }
 }
 
 export function defaultAuthor(session: vscode.AuthenticationSession): { name: string; email: string } {

@@ -92,11 +92,17 @@ export class GitPanel {
         if (m.createBranch) { await git.checkout(this.workingDir, branch, true) }
         else if (branch !== this.current) { await git.checkout(this.workingDir, branch, false) }
         const { name, email } = git.defaultAuthor(this.session)
-        await git.commitAndPush(this.workingDir, m.message.trim(), branch, this.session.accessToken, name, email)
+        const res = await git.commitAndPush(this.workingDir, m.message.trim(), branch, this.session.accessToken, name, email)
         this.current = await git.currentBranch(this.workingDir).catch(() => branch)
-        this.branches = await git.listBranches(this.workingDir).catch(() => this.branches)
+        const local = await git.listBranches(this.workingDir).catch(() => [])
+        for (const b of local) { if (!this.branches.includes(b)) { this.branches.push(b) } }
         this.busy(false)
-        this.post({ type: 'result', ok: true, message: `Listo. Subido a la rama "${branch}".` })
+        this.post({
+          type: 'result', ok: true,
+          message: res.committed
+            ? `Listo. Commit subido a la rama "${branch}".`
+            : `No había cambios nuevos. La rama "${branch}" quedó creada/actualizada en GitHub. (Edita o agrega archivos en la carpeta para hacer un commit con contenido.)`,
+        })
         await this.sendState()
       }
     } catch (e: any) {
