@@ -3,6 +3,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import * as path from 'path'
 import * as os from 'os'
+import { existsSync } from 'fs'
 
 const pexec = promisify(execFile)
 
@@ -77,8 +78,18 @@ export async function findLocalRepo(owner: string, name: string): Promise<string
 }
 
 export async function cloneRepo(token: string, owner: string, name: string, targetBase: string): Promise<string> {
-  await pexec('git', [...authArgs(token), 'clone', `https://github.com/${owner}/${name}.git`], { cwd: targetBase, maxBuffer: 50 * 1024 * 1024 })
-  return path.join(targetBase, name)
+  let target = path.join(targetBase, name)
+  if (existsSync(target)) {
+    // Ya existe: si es el mismo repo, reusar (y actualizar); si no, clonar en carpeta única.
+    const r = await remoteOwnerRepo(target).catch(() => null)
+    if (r && r.owner.toLowerCase() === owner.toLowerCase() && r.name.toLowerCase() === name.toLowerCase()) {
+      try { await git(target, ['fetch', '--all', '--prune'], token) } catch { /* sin red, seguir */ }
+      return target
+    }
+    target = path.join(targetBase, `${name}-${Date.now()}`)
+  }
+  await pexec('git', [...authArgs(token), 'clone', `https://github.com/${owner}/${name}.git`, target], { cwd: targetBase, maxBuffer: 50 * 1024 * 1024 })
+  return target
 }
 
 export async function remoteOwnerRepo(dir: string): Promise<{ owner: string; name: string } | null> {
