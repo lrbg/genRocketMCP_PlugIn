@@ -232,6 +232,16 @@ export async function listGeneratorsOf(domainId, attributeName) {
   return d?.generators ?? []
 }
 
+// ── Preview de datos por REST (genera muestra sin el Runtime) ────────────────
+export async function previewDomain(domainId, loopCount = 10) {
+  return grPost('/domain/preview', { organizationId: requireOrg(), domainId, loopCount: String(loopCount) })
+}
+export async function previewAttribute(domainId, attributeName, loopCount = 10, genName) {
+  const body = { organizationId: requireOrg(), domainId, name: attributeName, loopCount: String(loopCount) }
+  if (genName) { body.genName = genName }
+  return grPost('/attribute/preview', body)
+}
+
 // Catálogo de generadores (cacheado en el proceso para que sea rápido)
 let _genCache = null
 async function fetchAllGenerators() {
@@ -463,6 +473,44 @@ export function registerGenRocketTools(server) {
       } catch (e) {
         return bad(`Error al listar generadores: ${e.message}`)
       }
+    }
+  )
+
+  server.tool(
+    'genrocket_preview_domain',
+    'GENERA y MUESTRA datos sinteticos de un dominio via REST (sin necesidad del Runtime). POST /domain/preview. Devuelve filas de ejemplo (columnas = atributos). Ideal cuando el usuario pide "dame datos de ejemplo" o "como quedarian los datos".',
+    {
+      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
+      loopCount: z.number().int().positive().optional().describe('Cuantas filas generar (default 10)'),
+    },
+    async ({ domainId, loopCount = 10 }) => {
+      try {
+        const d = await previewDomain(domainId, loopCount)
+        const cols = d.attributes || []
+        const rows = d.attributeData || []
+        if (!cols.length) { return ok(JSON.stringify(d).slice(0, 800)) }
+        const head = cols.join(' | ')
+        const body = rows.map(r => r.join(' | ')).join('\n')
+        return ok(`Datos generados (${rows.length} filas):\n${head}\n${'-'.repeat(Math.min(head.length, 80))}\n${body}`)
+      } catch (e) { return bad(`preview_domain: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_preview_attribute',
+    'Genera y muestra los valores de UN atributo via REST. POST /attribute/preview. Util para ver que produce el generador de un atributo.',
+    {
+      domainId: z.string(),
+      attributeName: z.string(),
+      loopCount: z.number().int().positive().optional().describe('Cuantos valores (default 10)'),
+      genName: z.string().optional().describe('Posicion del generador (opcional, ej. gen1)'),
+    },
+    async ({ domainId, attributeName, loopCount = 10, genName }) => {
+      try {
+        const d = await previewAttribute(domainId, attributeName, loopCount, genName)
+        const vals = d.attributeData || d.data || d.values || d
+        return ok(`Valores generados de "${attributeName}":\n${JSON.stringify(vals).slice(0, 1500)}`)
+      } catch (e) { return bad(`preview_attribute: ${e.message}`) }
     }
   )
 
