@@ -250,6 +250,21 @@ export async function createAllAttributes(domainId, names, autoGenerator = true)
   return grPost('/attribute/createAll', { organizationId: requireOrg(), domainId, attributes: names, autoGenerator })
 }
 
+// ── Receivers (salida: CSV/JSON/XML/SQL/BD) ─────────────────────────────────
+export async function listDomainReceivers(domainId) {
+  const d = await grPost('/domainReceiver/list', { organizationId: requireOrg(), domainId })
+  return d?.domainReceivers ?? []
+}
+export async function addDomainReceiver(domainId, receiverType, receiverName) {
+  return grPost('/domainReceiver/add', { organizationId: requireOrg(), domainId, receiverType, receiverName: receiverName || receiverType })
+}
+export async function removeDomainReceiver(domainId, receiverName) {
+  return grPost('/domainReceiver/remove', { organizationId: requireOrg(), domainId, receiverName })
+}
+export async function setReceiverParameter(domainId, receiverName, parameterName, parameterValue) {
+  return grPost('/receiverParameter/update', { organizationId: requireOrg(), domainId, receiverName, parameterName, parameterValue: String(parameterValue) })
+}
+
 // Versiones del Runtime/Engine disponibles en el tenant (para instalar la correcta)
 export async function runtimeVersions() {
   const org = requireOrg()
@@ -663,6 +678,57 @@ export function registerGenRocketTools(server) {
           (withGen.length ? `\nGeneradores asignados: ${done.join(' | ')}` : ' (con generador por defecto)'),
         )
       } catch (e) { return bad(`bulk_create_attributes: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_list_domain_receivers',
+    'Lista los receivers (salidas) configurados en un dominio y sus parametros (outputPath, fileName, etc.). POST /domainReceiver/list.',
+    { domainId: z.string() },
+    async ({ domainId }) => {
+      try {
+        const recs = await listDomainReceivers(domainId)
+        if (!recs.length) { return ok('El dominio no tiene receivers configurados.') }
+        const lines = recs.map(r => {
+          const params = (r.receiverParameters || []).map(p => `${p.name}=${p.value}`).join(', ')
+          return `- ${r.name} (${r.receiverType})${params ? `\n    ${params}` : ''}`
+        }).join('\n')
+        return ok(`Receivers del dominio:\n${lines}`)
+      } catch (e) { return bad(`list_domain_receivers: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_add_domain_receiver',
+    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. receiverType comunes: CSVFileReceiver (CSV), JSONFileReceiver (JSON), XMLFileReceiver (XML), ExcelFileReceiver, TDMSQLReceiver / InsertUpdateSQLReceiver (SQL/BD). Despues configura outputPath/fileName con genrocket_set_receiver_parameter.',
+    {
+      domainId: z.string(),
+      receiverType: z.string().describe('Tipo de receiver, ej. CSVFileReceiver, JSONFileReceiver, XMLFileReceiver'),
+      receiverName: z.string().optional().describe('Nombre (default = receiverType)'),
+    },
+    async ({ domainId, receiverType, receiverName }) => {
+      try { await addDomainReceiver(domainId, receiverType, receiverName); return ok(`Receiver "${receiverName || receiverType}" (${receiverType}) agregado al dominio.`) }
+      catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_set_receiver_parameter',
+    'Configura un parametro de un receiver (ej. outputPath, fileName, delimiter, recordsPerFile). POST /receiverParameter/update.',
+    { domainId: z.string(), receiverName: z.string(), parameterName: z.string(), parameterValue: z.union([z.string(), z.number(), z.boolean()]) },
+    async ({ domainId, receiverName, parameterName, parameterValue }) => {
+      try { await setReceiverParameter(domainId, receiverName, parameterName, parameterValue); return ok(`Parametro "${parameterName}"="${parameterValue}" seteado en el receiver "${receiverName}".`) }
+      catch (e) { return bad(`set_receiver_parameter: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_remove_domain_receiver',
+    'Quita un receiver de un dominio. POST /domainReceiver/remove.',
+    { domainId: z.string(), receiverName: z.string() },
+    async ({ domainId, receiverName }) => {
+      try { await removeDomainReceiver(domainId, receiverName); return ok(`Receiver "${receiverName}" eliminado del dominio.`) }
+      catch (e) { return bad(`remove_domain_receiver: ${e.message}`) }
     }
   )
 
