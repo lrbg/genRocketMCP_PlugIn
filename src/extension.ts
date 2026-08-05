@@ -156,6 +156,18 @@ export function activate(context: vscode.ExtensionContext) {
       dbOut.push({ name: d.name, type: d.type || 'oracle', jdbcUrl: d.jdbcUrl, user: d.user || '', driverJar: d.driverJar || '', password: pw })
     }
 
+    // Token de GitHub del usuario (sesión existente, sin forzar login) para que el
+    // MCP pueda hacer push de datos generados a los repos. Nunca se guarda en el repo.
+    let githubToken = '', githubUser = '', githubEmail = ''
+    try {
+      const s = await vscode.authentication.getSession('github', ['repo'], { createIfNone: false })
+      if (s) {
+        githubToken = s.accessToken
+        githubUser = s.account.label
+        githubEmail = `${s.account.label}@users.noreply.github.com`
+      }
+    } catch { /* sin sesión de GitHub; el push pedirá conectarla */ }
+
     // Archivo de config local (fuera del repo, en el almacenamiento del usuario)
     const fullCfg = {
       baseUrl: c.get('baseUrl', ''),
@@ -165,6 +177,7 @@ export function activate(context: vscode.ExtensionContext) {
       runtimeCommand: c.get('runtimeCommand', ''),
       runtimeOutputDir: c.get('runtimeOutputDir', ''),
       dbConnections: dbOut,
+      githubToken, githubUser, githubEmail,
     }
     await vscode.workspace.fs.createDirectory(context.globalStorageUri)
     const cfgFile = vscode.Uri.joinPath(context.globalStorageUri, 'genrocket-config.json')

@@ -2,15 +2,32 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "publisher": "lrbg",
-  "engines": { "vscode": "^1.96.0" },
-  "categories": ["Other", "AI", "Data Science"],
-  "keywords": ["genrocket", "mcp", "synthetic data", "test data", "runtime"],
-  "repository": { "type": "git", "url": "https://github.com/lrbg/genrocketMCP_PlugIn.git" },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other",
+    "AI",
+    "Data Science"
+  ],
+  "keywords": [
+    "genrocket",
+    "mcp",
+    "synthetic data",
+    "test data",
+    "runtime"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lrbg/genrocketMCP_PlugIn.git"
+  },
   "license": "MIT",
   "main": "./out/extension.js",
-  "activationEvents": ["onView:genrocketExplorer"],
+  "activationEvents": [
+    "onView:genrocketExplorer"
+  ],
   "contributes": {
     "configuration": {
       "title": "GenRocket MCP",
@@ -46,13 +63,37 @@
           "markdownDescription": "Conexiones de base de datos para consultas de **solo lectura** (Oracle y SQL Server). La contraseña NO se pone aquí: se pide de forma segura al iniciar el MCP.",
           "items": {
             "type": "object",
-            "required": ["name", "jdbcUrl", "driverJar"],
+            "required": [
+              "name",
+              "jdbcUrl",
+              "driverJar"
+            ],
             "properties": {
-              "name": { "type": "string", "description": "Nombre para identificar la conexión (ej. prod-oracle)" },
-              "type": { "type": "string", "enum": ["oracle", "sqlserver"], "default": "oracle", "description": "Motor de base de datos" },
-              "jdbcUrl": { "type": "string", "description": "URL JDBC. Oracle: jdbc:oracle:thin:@//host:1521/servicio  |  SQL Server: jdbc:sqlserver://host:1433;databaseName=DB;encrypt=true;trustServerCertificate=true" },
-              "user": { "type": "string", "description": "Usuario de la BD" },
-              "driverJar": { "type": "string", "description": "Ruta al driver JDBC (.jar): ojdbc para Oracle, mssql-jdbc para SQL Server" }
+              "name": {
+                "type": "string",
+                "description": "Nombre para identificar la conexión (ej. prod-oracle)"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "oracle",
+                  "sqlserver"
+                ],
+                "default": "oracle",
+                "description": "Motor de base de datos"
+              },
+              "jdbcUrl": {
+                "type": "string",
+                "description": "URL JDBC. Oracle: jdbc:oracle:thin:@//host:1521/servicio  |  SQL Server: jdbc:sqlserver://host:1433;databaseName=DB;encrypt=true;trustServerCertificate=true"
+              },
+              "user": {
+                "type": "string",
+                "description": "Usuario de la BD"
+              },
+              "driverJar": {
+                "type": "string",
+                "description": "Ruta al driver JDBC (.jar): ojdbc para Oracle, mssql-jdbc para SQL Server"
+              }
             }
           }
         }
@@ -60,38 +101,113 @@
     },
     "viewsContainers": {
       "activitybar": [
-        { "id": "genrocket", "title": "GenRocket", "icon": "media/rocket.svg" }
+        {
+          "id": "genrocket",
+          "title": "GenRocket",
+          "icon": "media/rocket.svg"
+        }
       ]
     },
     "views": {
       "genrocket": [
-        { "id": "genrocketExplorer", "name": "Explorador" }
+        {
+          "id": "genrocketExplorer",
+          "name": "Explorador"
+        }
       ]
     },
     "commands": [
-      { "command": "genrocket.openConfig", "title": "GenRocket: Abrir configuración", "icon": "$(gear)" },
-      { "command": "genrocket.gitWizard", "title": "GenRocket: Subir mis cambios a GitHub", "icon": "$(cloud-upload)" },
-      { "command": "genrocket.openDb", "title": "GenRocket: Bases de datos (consultas)", "icon": "$(database)" },
-      { "command": "genrocket.setupCorpCert", "title": "GenRocket: Preparar certificados corporativos (arreglar TLS)" },
-      { "command": "genrocket.setPassword", "title": "GenRocket: Set Password" },
-      { "command": "genrocket.testConnection", "title": "GenRocket: Probar conexión" },
-      { "command": "genrocket.refresh", "title": "GenRocket: Refrescar", "icon": "$(refresh)" },
-      { "command": "genrocket.registerMcpServer", "title": "GenRocket: Registrar servidor MCP (Copilot Chat)" },
-      { "command": "genrocket.downloadScenario", "title": "Descargar escenario (.grs)", "icon": "$(cloud-download)" },
-      { "command": "genrocket.runScenario", "title": "Generar datos con el Runtime", "icon": "$(play)" },
-      { "command": "genrocket.downloadDomainTemplate", "title": "Plantilla CSV del dominio", "icon": "$(file-code)" }
+      {
+        "command": "genrocket.openConfig",
+        "title": "GenRocket: Abrir configuración",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "genrocket.gitWizard",
+        "title": "GenRocket: Subir mis cambios a GitHub",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "genrocket.openDb",
+        "title": "GenRocket: Bases de datos (consultas)",
+        "icon": "$(database)"
+      },
+      {
+        "command": "genrocket.setupCorpCert",
+        "title": "GenRocket: Preparar certificados corporativos (arreglar TLS)"
+      },
+      {
+        "command": "genrocket.setPassword",
+        "title": "GenRocket: Set Password"
+      },
+      {
+        "command": "genrocket.testConnection",
+        "title": "GenRocket: Probar conexión"
+      },
+      {
+        "command": "genrocket.refresh",
+        "title": "GenRocket: Refrescar",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "genrocket.registerMcpServer",
+        "title": "GenRocket: Registrar servidor MCP (Copilot Chat)"
+      },
+      {
+        "command": "genrocket.downloadScenario",
+        "title": "Descargar escenario (.grs)",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "genrocket.runScenario",
+        "title": "Generar datos con el Runtime",
+        "icon": "$(play)"
+      },
+      {
+        "command": "genrocket.downloadDomainTemplate",
+        "title": "Plantilla CSV del dominio",
+        "icon": "$(file-code)"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "genrocket.openDb", "when": "view == genrocketExplorer", "group": "navigation@1" },
-        { "command": "genrocket.gitWizard", "when": "view == genrocketExplorer", "group": "navigation@2" },
-        { "command": "genrocket.openConfig", "when": "view == genrocketExplorer", "group": "navigation@3" },
-        { "command": "genrocket.refresh", "when": "view == genrocketExplorer", "group": "navigation@4" }
+        {
+          "command": "genrocket.openDb",
+          "when": "view == genrocketExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "genrocket.gitWizard",
+          "when": "view == genrocketExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "genrocket.openConfig",
+          "when": "view == genrocketExplorer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "genrocket.refresh",
+          "when": "view == genrocketExplorer",
+          "group": "navigation@4"
+        }
       ],
       "view/item/context": [
-        { "command": "genrocket.downloadScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },
-        { "command": "genrocket.runScenario", "when": "view == genrocketExplorer && viewItem == scenario", "group": "inline" },
-        { "command": "genrocket.downloadDomainTemplate", "when": "view == genrocketExplorer && viewItem == domain", "group": "inline" }
+        {
+          "command": "genrocket.downloadScenario",
+          "when": "view == genrocketExplorer && viewItem == scenario",
+          "group": "inline"
+        },
+        {
+          "command": "genrocket.runScenario",
+          "when": "view == genrocketExplorer && viewItem == scenario",
+          "group": "inline"
+        },
+        {
+          "command": "genrocket.downloadDomainTemplate",
+          "when": "view == genrocketExplorer && viewItem == domain",
+          "group": "inline"
+        }
       ]
     }
   },

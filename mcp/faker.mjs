@@ -52,6 +52,14 @@ const TYPES = {
 
 export function fieldTypeList() { return Object.keys(TYPES) }
 
+/** Genera un valor sintético suelto de un tipo dado (para complementar datos reales). */
+export function fakeValue(type, opts = {}, locale = 'es') {
+  const f = locale === 'en' ? fakerEN : fakerES_MX
+  const fn = TYPES[type]
+  return fn ? fn(f, opts) : ''
+}
+export function hasFakeType(type) { return !!TYPES[type] }
+
 function genRows(fields, count, locale) {
   const f = locale === 'en' ? fakerEN : fakerES_MX
   const rows = []

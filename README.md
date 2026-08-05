@@ -1,20 +1,23 @@
 # GenRocket MCP — Extensión de VS Code
 
-Lleva GenRocket a VS Code: **explorador** de proyectos/escenarios/chains/dominios/generadores, **descarga** de escenarios `.grs`, **ejecución del Runtime** para generar datos, y un **servidor MCP** que expone todo como herramientas para el chat de IA (GitHub Copilot Chat).
+Lleva GenRocket a VS Code: **explorador** de proyectos/escenarios/chains/dominios/generadores, **descarga** de escenarios `.grs`, **ejecución del Runtime** para generar datos, **conexión a bases de datos** (Oracle/SQL Server, solo lectura), **generación de datos sintéticos** (Faker) y **publicación de la data a tus repos de GitHub** — todo expuesto como herramientas para el chat de IA (GitHub Copilot Chat) vía un **servidor MCP**.
 
-Reúne en una sola extensión lo que antes vivía disperso: **configuración + tools + MCP + runtime**.
+Reúne en una sola extensión lo que antes vivía disperso: **configuración + tools + MCP + runtime + bases de datos + publicación**.
 
 ## Características
 
 - **Explorador GenRocket** (barra lateral): proyectos → versión → Escenarios / Chains / Dominios → atributos → generadores.
-- **Descargar escenario (.grs)** desde el explorador (para el Runtime).
-- **Generar datos con el Runtime**: descarga el `.grs` y ejecuta tu GenRocket Runtime local; los archivos generados quedan en la carpeta de salida.
-- **Plantilla CSV** por dominio (columnas = atributos) para carga masiva.
-- **Servidor MCP**: registra las herramientas de GenRocket en Copilot Chat para conversar en lenguaje natural (test conexión, listar proyectos/escenarios/chains/dominios/generadores, descargar, ejecutar Runtime).
-- **Credenciales seguras**: la contraseña se guarda en el **SecretStorage** de VS Code (no en texto plano). El MCP la pide con un input seguro.
-- **Subir a GitHub (asistente paso a paso)**: conecta tu cuenta de GitHub, elige un repositorio, clónalo si hace falta, elige o crea una rama y sube tus cambios con un mensaje — todo guiado, en 5 pasos, sin comandos de git.
+- **Descargar escenario (.grs)** y **generar datos con el Runtime** local.
+- **Autoría por REST**: crear dominios/atributos, agregar y parametrizar generadores, sugerir el generador adecuado por el nombre del atributo, y listar/crear receivers.
+- **Vista previa por REST**: muestra datos de ejemplo de un dominio o atributo sin necesidad del Runtime (`domain/preview`).
+- **Bases de datos (Oracle / SQL Server)**: varias conexiones, exploración en lenguaje natural y consultas **solo lectura**. El módulo de configuración **lista tus conexiones** con estado y botón de prueba.
+- **Datos sintéticos con Faker**: genera datos falsos rápidos (JSON/CSV/Excel) sin GenRocket.
+- **Sembrar datos reales + complemento sintético (Opción B)**: trae datos reales de la BD por `SELECT` (ej. pólizas) y completa cada fila con campos sintéticos (teléfono, email…).
+- **Publicar a N repos**: sube la data generada (o un `.md` de contexto de un dominio) a uno o varios repositorios de GitHub con commit + push.
+- **Servidor MCP**: registra todo en Copilot Chat para trabajar en lenguaje natural.
+- **Credenciales seguras**: contraseñas en el **SecretStorage** de VS Code; el push usa tu **sesión de GitHub** de VS Code. Nada de tokens ni contraseñas en el repositorio.
 
-## Subir mis cambios a GitHub (fácil)
+## Subir mis cambios a GitHub (asistente paso a paso)
 
 Comando **`GenRocket: Subir mis cambios a GitHub`** (o el ícono de subida en el explorador). Un asistente con 5 pasos:
 
@@ -33,6 +36,7 @@ Conecta a **Oracle** y **SQL Server** (varias bases, varias conexiones) y pregun
 - **Solo lectura**: únicamente `SELECT` (bloquea INSERT/UPDATE/DELETE/DDL).
 - Usa **JDBC** con tus propios drivers (ojdbc para Oracle, mssql-jdbc para SQL Server): **no usa npm**.
 - Requiere **Java** instalado y la ruta a tu driver `.jar`.
+- El **módulo de configuración** (`GenRocket: Abrir configuración`) ahora **lista tus conexiones** registradas con su tipo, host/usuario, aviso de "sin contraseña" y un botón **Probar** por conexión, más un botón **Administrar bases de datos**.
 
 **Configura las conexiones** en `Settings` → busca `genrocket.dbConnections` → "Edit in settings.json". Ejemplo:
 ```json
@@ -47,13 +51,66 @@ Conecta a **Oracle** y **SQL Server** (varias bases, varias conexiones) y pregun
 ```
 La **contraseña no va aquí**: al registrar/iniciar el MCP, VS Code la pide por un input seguro (una por conexión).
 
+> **Nota sobre GenRocket y las conexiones de BD:** GenRocket **no expone** por REST la lista de conexiones de base de datos dadas de alta en su plataforma (esas conexiones JDBC viven en la carpeta del Runtime). Por eso el plugin administra **sus propias** conexiones (las de arriba), que son las que el agente usa para traer datos reales.
+
 **Tools MCP** (en Copilot Chat): `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query` — todas de solo lectura y con parámetro `connection` para elegir la base.
+
+## Datos sintéticos rápidos (Faker)
+
+Módulo independiente para generar **datos falsos** sin GenRocket ni BD, exportables a **JSON / CSV / Excel**. Útil para datos desechables de prueba.
+
+- `faker_field_types`: lista los tipos disponibles (firstName, email, phone, date, integer, address, etc.).
+- `faker_generate`: define columnas `{name, type}`, cantidad de filas y formato. Idioma `es` (México) por defecto.
+
+Ejemplo en Copilot Chat: *"genera 50 usuarios con nombre, email, teléfono y edad entre 18 y 65 en Excel"*.
+
+## Sembrar datos reales de la BD y publicar a repos (Opción B)
+
+Combina **datos reales de tu base** con **complemento sintético** y súbelos a uno o varios repositorios en un solo paso. Es el caso típico: *tomar números y nombres de póliza reales y completar teléfono/email/dirección sintéticos*.
+
+**Tool:** `seed_from_db_and_publish`
+
+| Parámetro | Descripción |
+|---|---|
+| `connection` | Nombre de la conexión de BD (default: la primera). |
+| `query` | `SELECT` que trae los datos reales (ej. `SELECT numero_poliza, nombre FROM polizas WHERE estatus='ACTIVA'`). Solo lectura. |
+| `rename` | Renombra columnas de la BD en la salida, ej. `{"NUMERO_POLIZA":"policyNumber","NOMBRE":"policyHolder"}`. |
+| `syntheticFields` | Campos sintéticos por fila: `[{name,type,min,max}]` (tipos de `faker_field_types`). |
+| `limit` | Máximo de filas reales (default 500). |
+| `format` | `csv` \| `json` \| `xlsx` (default csv). |
+| `repos` | Destinos `[{repo:"owner/nombre", branch?, path}]`. **1..N repos.** Si se omite, solo genera el archivo (dry-run). |
+| `commitMessage` | Mensaje de commit (opcional). |
+
+**Relación N↔N:** una llamada puede subir a **varios repos** (varios destinos); y puedes tener **varias publicaciones** hacia el mismo repo con rutas distintas (varios dominios → un repo).
+
+Ejemplo en Copilot Chat:
+> *"Con la conexión prod-oracle, trae `SELECT numero_poliza, nombre FROM polizas WHERE estatus='ACTIVA'`, renombra a policyNumber/policyHolder, agrega telefono y email sintéticos, formato csv, y súbelo a `lrbg/appQA` en `test-data/polizas.csv` y a `lrbg/appRegresion` en `fixtures/polizas.csv`."*
+
+Recomendación: primero haz un **dry-run** (sin `repos`) para revisar el archivo generado, y luego publica.
+
+## Documentar un dominio como Markdown de contexto
+
+Convierte un dominio de GenRocket en un `.md` que sirve de **contexto para el agente** (y para el equipo): atributos, una muestra de datos y, opcionalmente, los generadores de cada atributo. Puede publicarse a repo(s).
+
+**Tool:** `domain_to_markdown` — parámetros: `projectName`, `domainName`, `version`, `sampleRows`, `includeGenerators`, `repos`.
+
+Ejemplo: *"documenta el dominio Poliza del proyecto Prueba_APIS como markdown, con generadores, y súbelo a `lrbg/appQA` en `docs/genrocket/poliza.md`"*.
+
+## Publicación a repos: cómo autentica
+
+El MCP hace `commit` + `push` con **tu sesión de GitHub de VS Code**: al registrar el servidor MCP, el plugin inyecta tu token de GitHub en la configuración local del MCP (nunca en el repositorio). Requisitos:
+
+1. Tener **GitHub conectado** en VS Code (Accounts).
+2. Ejecutar **`GenRocket: Registrar servidor MCP`** (o guardar la configuración) para que el token quede disponible, y hacer **Restart** del MCP.
+
+Si el token no está disponible, la tool lo indica y no sube nada. Los repos se clonan/actualizan en `~/GenRocketRepos`.
 
 ## Requisitos
 
 - VS Code ^1.96
 - Node.js 20+
-- Java (para el GenRocket Runtime) y el **GenRocket Runtime engine** instalado (software propietario de GenRocket) si vas a generar datos.
+- Java (para el Runtime **y** para el módulo de BD JDBC).
+- El **GenRocket Runtime engine** instalado (software propietario de GenRocket) solo si vas a generar datos con el Runtime.
 
 ## Instalación (recomendada): desde el `.vsix` — sin npm
 
@@ -87,7 +144,7 @@ En ambos, el comando exporta la CA de confianza del sistema (macOS = llavero; Wi
 
 ```mermaid
 flowchart TD
-    A["Instala el .vsix v0.1.1"] --> B["Cmd + Shift + P"]
+    A["Instala el .vsix"] --> B["Cmd + Shift + P"]
     B --> C["Escribe: GenRocket: Preparar certificados corporativos"]
     C --> D["Enter — genera la CA del llavero"]
     D --> E["Cmd + Q — cierra VS Code por completo"]
@@ -100,7 +157,6 @@ flowchart TD
 ![Ejecutar comando](docs/images/paso-2-comando.png)
 ![Reiniciar VS Code](docs/images/paso-3-reiniciar.png)
 -->
-
 
 No se apaga la verificación TLS: solo se confía en la CA que tu empresa ya instaló en tu llavero de macOS.
 
@@ -146,10 +202,11 @@ npm run package        # genera el .vsix (requiere @vscode/vsce)
 
 ## Configuración
 
-Cada usuario configura **sus propios datos**. La forma más clara es la **ventana de configuración**: comando **`GenRocket: Abrir configuración`** (o el ícono de engrane en el panel del explorador). Ahí pones tenant, usuario, contraseña, org id y el comando del Runtime, con botones para **probar conexión** y **registrar el MCP**.
+Cada usuario configura **sus propios datos**. La forma más clara es la **ventana de configuración**: comando **`GenRocket: Abrir configuración`** (o el ícono de engrane en el panel del explorador). Ahí pones tenant, usuario, contraseña, org id y el comando del Runtime, con botones para **probar conexión** y **registrar el MCP**, además de la **lista de tus bases de datos** con prueba por conexión.
 
 - La **contraseña** se guarda cifrada en el **SecretStorage** de VS Code — nunca en el repositorio ni en texto plano.
 - El **chat de IA** usa **tu propia suscripción de GitHub Copilot**; la extensión no guarda tokens de Copilot ni de OpenAI.
+- El **push a repos** usa tu **sesión de GitHub** de VS Code (token inyectado en la config local al registrar el MCP; nunca en el repo).
 - Nada viene precargado con datos de otra organización: los valores por defecto son genéricos y **editables** por el usuario.
 
 También puedes editar todo desde `Settings → GenRocket MCP`:
@@ -161,23 +218,39 @@ También puedes editar todo desde `Settings → GenRocket MCP`:
 | `genrocket.organizationId` | Organization external ID |
 | `genrocket.runtimeCommand` | Comando del Runtime, con `{grs}` y `{dir}`. Ej: `java -jar /ruta/GenRocketRuntime.jar {grs}` |
 | `genrocket.runtimeOutputDir` | Carpeta de salida del Runtime (vacío = temporal) |
+| `genrocket.dbConnections` | Conexiones Oracle/SQL Server (ver sección Base de Datos) |
 
-La **contraseña** se guarda con el comando **`GenRocket: Set Password`** (Command Palette).
+La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Password`** (Command Palette).
 
 ## Usar el chat de IA (MCP)
 
-1. Ejecuta el comando **`GenRocket: Registrar servidor MCP (Copilot Chat)`**. Escribe `.vscode/mcp.json` con la config y un input seguro para la contraseña.
-2. Abre `.vscode/mcp.json` y pulsa **Start** en el servidor `genrocket`.
-3. En Copilot Chat pídele, por ejemplo: *"lista los dominios del proyecto UST_LOB_POC v2.0"* o *"genera datos del escenario X con el Runtime"*.
+1. Ejecuta el comando **`GenRocket: Registrar servidor MCP (Copilot Chat)`**. Escribe `.vscode/mcp.json` apuntando a la config local (incluye tu token de GitHub para el push).
+2. Abre `.vscode/mcp.json` y pulsa **Start** (o **Restart** si ya estaba corriendo) en el servidor `genrocket`.
+3. En Copilot Chat pídele, por ejemplo: *"lista los dominios del proyecto UST_LOB_POC v2.0"*, *"genera 100 pólizas reales + teléfono/email sintéticos y súbelas a mi repo de QA"* o *"documenta el dominio X como markdown"*.
+
+> Cada vez que cambies configuración, credenciales, conexiones de BD o tu cuenta de GitHub, vuelve a **Registrar el MCP** y haz **Restart** para que tome los cambios.
 
 ## Herramientas MCP
 
-`genrocket_test_connection`, `genrocket_list_scenarios`, `genrocket_list_chains`, `genrocket_list_domains`, `genrocket_list_generators`, `genrocket_download_scenario`, `genrocket_runtime_status`, `genrocket_run_scenario`.
+**GenRocket — consulta:** `genrocket_test_connection`, `genrocket_list_scenarios`, `genrocket_list_chains`, `genrocket_list_domains`, `genrocket_list_generators`.
+
+**GenRocket — vista previa (genera muestra por REST, sin Runtime):** `genrocket_preview_domain`, `genrocket_preview_attribute`.
+
+**GenRocket — autoría y generadores:** crear dominio/atributos, agregar y parametrizar generadores, sugerir generador por nombre de atributo, listar/crear receivers.
+
+**GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`).
+
+**Bases de datos (solo lectura):** `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query`.
+
+**Datos sintéticos (Faker):** `faker_field_types`, `faker_generate`.
+
+**Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_markdown` (dominio → `.md` de contexto → push opcional).
 
 ## Notas sobre GenRocket
 
-- La **autoría** (crear dominios, atributos, generadores, receivers, diseñar escenarios) se hace en el **GenRocket Designer**; la REST API es de lectura/consumo.
-- La **generación de datos** la realiza el **GenRocket Runtime** con la definición `.grs`; la nube no genera ni devuelve datos por REST.
+- El plugin puede **autoría básica por REST** (crear dominios, atributos, agregar y parametrizar generadores, receivers). El diseño avanzado sigue siendo más cómodo en el **GenRocket Designer**.
+- La **vista previa** (`domain/preview`) genera una muestra por REST; para **volumen completo con receivers** se usa el **GenRocket Runtime** con la definición `.grs`.
+- GenRocket **no expone** por REST la lista de conexiones de BD de su plataforma (viven en la carpeta JDBC del Runtime). La integración BD→GenRocket nativa se hace con los generadores de consulta (familia `Query*`), que requieren el Runtime + su configuración JDBC.
 
 ## Licencia
 

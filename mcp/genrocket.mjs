@@ -410,7 +410,7 @@ function dbConnections() {
   try { return JSON.parse(process.env.GENROCKET_DB_JSON || '[]') } catch { return [] }
 }
 function dbEnvPwName(name) { return 'GENROCKET_DB_PW_' + String(name).toUpperCase().replace(/[^A-Z0-9]/g, '_') }
-function getConn(name) {
+export function getConn(name) {
   const conns = dbConnections()
   if (!conns.length) throw new Error('No hay conexiones de BD configuradas.')
   const c = name ? conns.find(x => x.name === name) : conns[0]
@@ -418,11 +418,14 @@ function getConn(name) {
   return { type: 'oracle', ...c, password: c.password || process.env[dbEnvPwName(c.name)] || '' }
 }
 
+/** Expone la config cargada (baseUrl, githubToken, etc.) a otros módulos del MCP. */
+export function getConfig() { return FILECFG }
+
 function assertSelectOnly(sql) {
   if (!/^\s*(select|with)\b/i.test(sql || '')) throw new Error('Solo se permiten consultas SELECT (modo solo lectura).')
 }
 
-async function dbRun(conn, sql, maxRows = 500) {
+export async function dbRun(conn, sql, maxRows = 500) {
   if (!conn.driverJar) throw new Error(`La conexión "${conn.name}" no tiene driverJar (ruta al ojdbc / mssql-jdbc .jar).`)
   if (!conn.jdbcUrl) throw new Error(`La conexión "${conn.name}" no tiene jdbcUrl.`)
   assertSelectOnly(sql)
