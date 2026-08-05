@@ -85,7 +85,11 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
  * descubra solo, sin que el usuario edite `mcp.json`. En cada descubrimiento reescribe el
  * archivo de config, así el server siempre arranca con las credenciales frescas.
  */
-export class GenrocketMcpProvider implements vscode.McpServerDefinitionProvider {
+// Nota: los tipos McpStdioServerDefinition/McpServerDefinitionProvider existen en
+// @types/vscode >= 1.101, pero mantenemos engines.vscode en ^1.96 para no romper la
+// instalación en editores viejos (donde se usa el fallback por comando). Por eso se
+// accede a la API vía `any` + feature-detect, en vez de tipar contra 1.101.
+export class GenrocketMcpProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>()
   readonly onDidChangeMcpServerDefinitions = this._onDidChange.event
 
@@ -94,14 +98,15 @@ export class GenrocketMcpProvider implements vscode.McpServerDefinitionProvider 
   /** Dispara un re-descubrimiento (llamar tras guardar credenciales/config). */
   refresh(): void { this._onDidChange.fire() }
 
-  async provideMcpServerDefinitions(): Promise<vscode.McpServerDefinition[]> {
+  async provideMcpServerDefinitions(): Promise<any[]> {
     const rt = await buildGenrocketRuntime(this.context)
-    const def = new vscode.McpStdioServerDefinition('GenRocket', 'node', [rt.serverPath], rt.env, rt.version)
+    const Stdio: any = (vscode as any).McpStdioServerDefinition
+    const def = new Stdio('GenRocket', 'node', [rt.serverPath], rt.env, rt.version)
     def.cwd = vscode.Uri.file(path.dirname(rt.serverPath))
     return [def]
   }
 
-  async resolveMcpServerDefinition(server: vscode.McpServerDefinition): Promise<vscode.McpServerDefinition> {
+  async resolveMcpServerDefinition(server: any): Promise<any> {
     // La config ya se escribió en provideMcpServerDefinitions(). Si faltan credenciales,
     // el server responderá con un error claro; avisamos una sola vez para guiar al usuario.
     const rt = await buildGenrocketRuntime(this.context)
