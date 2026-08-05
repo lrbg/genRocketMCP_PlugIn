@@ -13,7 +13,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, copyFile, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { z } from 'zod'
@@ -107,6 +107,16 @@ function githubAuth() {
   const login = cfg.githubUser || 'genrocket-bot'
   const author = { name: login, email: cfg.githubEmail || `${login}@users.noreply.github.com` }
   return { token, author }
+}
+
+function logActivity(entry) {
+  try {
+    const cfg = getConfig()
+    const f = cfg.activityLog
+    if (!f) { return }
+    mkdirSync(dirname(f), { recursive: true })
+    appendFileSync(f, JSON.stringify({ ts: new Date().toISOString(), user: cfg.githubUser || 'local', ok: true, ...entry }) + '\n', 'utf8')
+  } catch { /* no romper la operación por el log */ }
 }
 
 // ── Serialización de datos ────────────────────────────────────────────────────
@@ -210,6 +220,7 @@ export function registerPublishTools(server) {
       limit: z.number().int().positive().max(10000).optional().describe('Máximo de filas reales a traer (default 500).'),
       format: z.enum(['csv', 'json', 'xlsx']).optional().describe('Formato de salida (default csv).'),
       fileName: z.string().optional().describe('Nombre base del archivo (default seed_data).'),
+      domain: z.string().optional().describe('Etiqueta de dominio para el dashboard (opcional).'),
       locale: z.enum(['es', 'en']).optional().describe('Idioma de los datos sintéticos (default es = México).'),
       repos: z.array(z.object({
         repo: z.string().describe('owner/nombre'),
@@ -218,7 +229,7 @@ export function registerPublishTools(server) {
       })).optional().describe('Destinos. 1..N repos. Si se omite, solo genera el archivo (no sube nada).'),
       commitMessage: z.string().optional().describe('Mensaje de commit (default automático).'),
     },
-    async ({ connection, query, rename = {}, syntheticFields = [], limit = 500, format = 'csv', fileName, locale = 'es', repos = [], commitMessage }) => {
+    async ({ connection, query, rename = {}, syntheticFields = [], limit = 500, format = 'csv', fileName, domain, locale = 'es', repos = [], commitMessage }) => {
       try {
         if (!/^\s*(select|with)\b/i.test(query || '')) { return bad('Solo se permiten consultas SELECT (modo solo lectura).') }
         const badTypes = syntheticFields.filter(f => !hasFakeType(f.type)).map(f => f.type)
@@ -238,6 +249,7 @@ export function registerPublishTools(server) {
         const base = safeBase(fileName, 'seed_data')
         const localFile = join(OUTDIR, `${base}.${format}`)
         await writeDataset(format, cols, rows, localFile)
+        logActivity({ action: 'seed', domain, rows: rows.length, format, repos: repos.map(r => r.repo), pushed: repos.length > 0 })
 
         const prev = rows.slice(0, 5).map(r => cols.map(c => r[c]).join(' | ')).join('\n')
         let out = `Generadas ${rows.length} filas (${rows.length} reales de BD + ${synCols.length} campos sintéticos por fila).\n`
@@ -292,6 +304,7 @@ export function registerPublishTools(server) {
         const dom = domains.find(d => (d.name || '').toLowerCase() === domainName.toLowerCase())
         if (!dom) { return bad(`Dominio "${domainName}" no encontrado en ${projectName} v${version}. Disponibles: ${domains.map(d => d.name).join(', ') || '(ninguno)'}`) }
         const { md } = await buildDomainMarkdown(projectName, version, dom, sampleRows, includeGenerators)
+        logActivity({ action: 'context', domain: dom.name, repos: repos.map(r => r.repo), pushed: repos.length > 0 })
 
         if (repos.length) {
           const { token, author } = githubAuth()
@@ -397,6 +410,7 @@ export function registerPublishTools(server) {
         const idxLocal = join(OUTDIR, 'README.md')
         await writeFile(idxLocal, idx, 'utf8')
         files.push({ path: `${basePath}/README.md`, localFile: idxLocal })
+        logActivity({ action: 'context_project', domain: projectName, repos: repos.map(r => r.repo), pushed: repos.length > 0, count: built.length })
 
         let out = idx + `\n\n---\n**${files.length} archivo(s)** generado(s) en \`${OUTDIR}\`. Patrones detectados: ${shared.length} atributo(s) compartido(s).`
 

@@ -111,6 +111,15 @@ El MCP hace `commit` + `push` con **tu sesión de GitHub de VS Code**: al regist
 
 Si el token no está disponible, la tool lo indica y no sube nada. Los repos se clonan/actualizan en `~/GenRocketRepos`.
 
+## Manager Dashboard (Directiva N.4)
+
+Tablero para el manager, **protegido por palabra clave**. Ábrelo con el icono de gráfica del panel de GenRocket (o el comando `GenRocket: Manager Dashboard (Directiva N.4)`): pedirá una palabra clave y, si es correcta, abre el tablero.
+
+- **Contraseña:** se valida contra un **hash** guardado en el SecretStorage de VS Code (nunca en el repositorio). Cámbiala con `GenRocket: Cambiar palabra clave del Dashboard`.
+- **Qué muestra:** KPIs (datasets, filas, dominios, repos, usuarios, última actividad); **datos generados por dominio** (dona + tabla); **commits/publicaciones por usuario**; **actividad por usuario** (resumen corto y descriptivo); **salud** (errores recientes + conexiones de BD). El botón *Guardar .md* exporta el tablero con gráficas **mermaid**.
+- **De dónde salen los datos:** un registro de actividad que el plugin escribe en cada siembra/contexto (usuario, dominio, filas, formato, repos).
+- **Para todo el equipo:** configura `genrocket.dashboard.teamRepo` (owner/nombre) y `genrocket.dashboard.teamPath`; cada persona sincroniza su actividad como `<usuario>.jsonl` en ese repo y el tablero **agrega a todo el equipo**. Sin configurarlo, el tablero es local.
+
 ## Requisitos
 
 - VS Code ^1.96

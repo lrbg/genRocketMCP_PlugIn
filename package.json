@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -26,7 +26,8 @@
   "license": "MIT",
   "main": "./out/extension.js",
   "activationEvents": [
-    "onView:genrocketExplorer"
+    "onView:genrocketExplorer",
+    "onCommand:genrocket.openDashboard"
   ],
   "contributes": {
     "configuration": {
@@ -56,6 +57,16 @@
           "type": "string",
           "default": "",
           "description": "Carpeta base de salida del Runtime. Vacío usa una carpeta temporal del sistema."
+        },
+        "genrocket.dashboard.teamRepo": {
+          "type": "string",
+          "default": "",
+          "description": "Repo compartido (owner/nombre) para agregar la actividad de TODO el equipo en el Manager Dashboard. Vacío = dashboard solo con datos locales."
+        },
+        "genrocket.dashboard.teamPath": {
+          "type": "string",
+          "default": ".genrocket/activity",
+          "description": "Carpeta dentro del repo de equipo donde se guarda la actividad (un archivo <usuario>.jsonl por persona)."
         },
         "genrocket.dbConnections": {
           "type": "array",
@@ -118,6 +129,15 @@
     },
     "commands": [
       {
+        "command": "genrocket.openDashboard",
+        "title": "GenRocket: Manager Dashboard (Directiva N.4)",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "genrocket.setDashboardPassword",
+        "title": "GenRocket: Cambiar palabra clave del Dashboard"
+      },
+      {
         "command": "genrocket.openConfig",
         "title": "GenRocket: Abrir configuración",
         "icon": "$(gear)"
@@ -171,6 +191,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "genrocket.openDashboard",
+          "when": "view == genrocketExplorer",
+          "group": "navigation@0"
+        },
         {
           "command": "genrocket.openDb",
           "when": "view == genrocketExplorer",

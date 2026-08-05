@@ -1,13 +1,20 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import * as crypto from 'crypto'
 import * as gr from './client'
 import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
 import { GitPanel } from './gitPanel'
 import { buildCaBundle, setLaunchEnv } from './ca'
 import { DbPanel } from './dbPanel'
+import { DashboardPanel } from './dashboard'
 
 const SECRET_KEY = 'genrocket.password'
+// Hash SHA-256 de la palabra clave por defecto del dashboard (la contraseña NUNCA
+// va en texto plano en el repo). El usuario puede cambiarla con setDashboardPassword.
+const DEFAULT_DASH_HASH = '57626bcd9a191c81bb9b9500002c79cec1de96ec63c29d539394dab0c7187ac2'
+const DASH_HASH_KEY = 'genrocket.dashboard.pwhash'
+const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
 
 async function getConfig(context: vscode.ExtensionContext): Promise<gr.GenRocketConfig> {
   const c = vscode.workspace.getConfiguration('genrocket')
@@ -42,6 +49,34 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.gitWizard', () => GitPanel.show(context))
 
   reg('genrocket.openDb', () => DbPanel.show(context))
+
+  // ── Manager Dashboard (protegido por palabra clave — Directiva N.4 / OCP) ──
+  reg('genrocket.openDashboard', async () => {
+    const input = await vscode.window.showInputBox({
+      password: true, ignoreFocusOut: true,
+      title: 'Directiva N.4 — OCP',
+      prompt: 'Ingresa la palabra clave para abrir el Manager Dashboard',
+      placeHolder: 'palabra clave',
+    })
+    if (input === undefined) { return }
+    const stored = (await context.secrets.get(DASH_HASH_KEY)) || DEFAULT_DASH_HASH
+    if (sha256(input) !== stored) {
+      vscode.window.showErrorMessage('OCP · Acceso denegado: palabra clave incorrecta.')
+      return
+    }
+    await DashboardPanel.show(context)
+  })
+
+  reg('genrocket.setDashboardPassword', async () => {
+    const p = await vscode.window.showInputBox({
+      password: true, ignoreFocusOut: true,
+      title: 'Directiva N.4 — OCP',
+      prompt: 'Nueva palabra clave del Manager Dashboard (se guarda cifrada, nunca en el repo)',
+    })
+    if (!p) { return }
+    await context.secrets.store(DASH_HASH_KEY, sha256(p))
+    vscode.window.showInformationMessage('Palabra clave del dashboard actualizada.')
+  })
 
   reg('genrocket.setupCorpCert', async () => {
     try {
@@ -168,6 +203,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
     } catch { /* sin sesión de GitHub; el push pedirá conectarla */ }
 
+    // Ruta del registro de actividad (compartido entre extensión y MCP para el dashboard)
+    await vscode.workspace.fs.createDirectory(context.globalStorageUri)
+    const activityLog = vscode.Uri.joinPath(context.globalStorageUri, 'activity.jsonl').fsPath
+
     // Archivo de config local (fuera del repo, en el almacenamiento del usuario)
     const fullCfg = {
       baseUrl: c.get('baseUrl', ''),
@@ -178,8 +217,8 @@ export function activate(context: vscode.ExtensionContext) {
       runtimeOutputDir: c.get('runtimeOutputDir', ''),
       dbConnections: dbOut,
       githubToken, githubUser, githubEmail,
+      activityLog,
     }
-    await vscode.workspace.fs.createDirectory(context.globalStorageUri)
     const cfgFile = vscode.Uri.joinPath(context.globalStorageUri, 'genrocket-config.json')
     await vscode.workspace.fs.writeFile(cfgFile, Buffer.from(JSON.stringify(fullCfg, null, 2), 'utf8'))
 

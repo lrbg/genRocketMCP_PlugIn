@@ -13,7 +13,7 @@ import { registerGenRocketTools } from './genrocket.mjs'
 import { registerFakerTools } from './faker.mjs'
 import { registerPublishTools } from './publish.mjs'
 
-const server = new McpServer({ name: 'genrocket-mcp', version: "0.1.25" })
+const server = new McpServer({ name: 'genrocket-mcp', version: "0.1.26" })
 registerGenRocketTools(server)
 registerFakerTools(server)
 registerPublishTools(server)
