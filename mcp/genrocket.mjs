@@ -172,6 +172,59 @@ export async function runtimeStatus() {
   return { java, runtimeConfigured: !!RUNTIME_CMD, runtimeCmd: RUNTIME_CMD || null, outDir: RUNTIME_OUTDIR }
 }
 
+// Descarga el paquete .grs de una CHAIN (ZIP con todos sus escenarios).
+export async function downloadChain(chainId) {
+  const token = await getToken()
+  const res = await fetch(`${grBase()}/chain/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-auth-token': token },
+    body: JSON.stringify({ organizationId: requireOrg(), chainId }),
+  })
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) {
+    const j = await res.json().catch(() => ({}))
+    const msg = j?.errors ? Object.values(j.errors).join('; ') : (j?.message || 'GenRocket devolvió un error')
+    throw new Error(msg)
+  }
+  if (!res.ok) { throw new Error(`GenRocket error ${res.status} en /chain/download (esa chain puede tener un escenario con problema)`) }
+  const bytes = new Uint8Array(await res.arrayBuffer())
+  const filename = (res.headers.get('content-disposition') || '').match(/filename="?([^"]+)"?/)?.[1] || `${chainId}.grs`
+  return { filename, bytes }
+}
+
+// Ejecuta un .grs (escenario o chain) con el Runtime local y recolecta los archivos generados.
+async function runGrs(filename, bytes, label, fallbackId) {
+  if (!RUNTIME_CMD) {
+    throw new Error('GenRocket Runtime no configurado. Define GENROCKET_RUNTIME_CMD con el comando de tu Runtime (usa {grs} y {dir}), p. ej: java -jar /ruta/GenRocketRuntime.jar {grs}')
+  }
+  const safe = String(label || fallbackId).replace(/[^\w.-]/g, '_')
+  const dir = join(RUNTIME_OUTDIR, `${safe}-${Date.now()}`)
+  await mkdir(dir, { recursive: true })
+  const grsPath = join(dir, filename.endsWith('.grs') ? filename : `${fallbackId}.grs`)
+  await writeFile(grsPath, bytes)
+  const cmd = RUNTIME_CMD.replaceAll('{grs}', `"${grsPath}"`).replaceAll('{dir}', `"${dir}"`)
+  let stdout = '', stderr = '', exitCode = 0
+  try {
+    const r = await execAsync(cmd, { cwd: dir, timeout: 10 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 })
+    stdout = r.stdout; stderr = r.stderr
+  } catch (e) {
+    exitCode = e.code ?? 1; stdout = e.stdout || ''; stderr = e.stderr || e.message
+  }
+  const outputs = []
+  for (const f of await readdir(dir)) {
+    const full = join(dir, f)
+    if (full === grsPath) { continue }
+    const st = await stat(full).catch(() => null)
+    if (st?.isFile()) { outputs.push({ name: f, bytes: st.size }) }
+  }
+  return { dir, grs: grsPath, exitCode, stdout: stdout.slice(-3000), stderr: stderr.slice(-3000), outputs }
+}
+
+export async function runChain(chainId, { chainName } = {}) {
+  const { filename, bytes } = await downloadChain(chainId)
+  return runGrs(filename, bytes, chainName ? `chain-${chainName}` : `chain-${chainId}`, chainId)
+}
+
 // Descarga el .grs y ejecuta el Runtime local (GENROCKET_RUNTIME_CMD) para generar datos.
 export async function runScenario(scenarioId, { scenarioName } = {}) {
   if (!RUNTIME_CMD) {
@@ -255,8 +308,22 @@ export async function listDomainReceivers(domainId) {
   const d = await grPost('/domainReceiver/list', { organizationId: requireOrg(), domainId })
   return d?.domainReceivers ?? []
 }
+// GenRocket normaliza los nombres de atributo (quita separadores, camelCase): fecha_nacimiento -> fechaNacimiento
+export function grNorm(name) {
+  const parts = String(name || '').split(/[^A-Za-z0-9]+/).filter(Boolean)
+  if (!parts.length) { return name }
+  return parts.map((w, i) => i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)).join('')
+}
+
+// Mapa de alias amigables a los tipos reales de receiver de GenRocket
+const RECEIVER_MAP = {
+  csv: 'DelimitedFileReceiver', delimited: 'DelimitedFileReceiver',
+  json: 'JSONFileReceiver', xml: 'XMLFileReceiver',
+  excel: 'ExcelFileReceiver', xlsx: 'ExcelFileReceiver',
+}
 export async function addDomainReceiver(domainId, receiverType, receiverName) {
-  return grPost('/domainReceiver/add', { organizationId: requireOrg(), domainId, receiverType, receiverName: receiverName || receiverType })
+  const rt = RECEIVER_MAP[String(receiverType || '').toLowerCase()] || receiverType
+  return grPost('/domainReceiver/add', { organizationId: requireOrg(), domainId, receiverType: rt, receiverName: receiverName || rt })
 }
 export async function removeDomainReceiver(domainId, receiverName) {
   return grPost('/domainReceiver/remove', { organizationId: requireOrg(), domainId, receiverName })
@@ -565,6 +632,29 @@ export function registerGenRocketTools(server) {
   )
 
   server.tool(
+    'genrocket_download_chain',
+    'Descarga el paquete .grs de una CHAIN (ZIP con todos sus escenarios) por su chainId (externalId de genrocket_list_chains). Para el Runtime.',
+    { chainId: z.string() },
+    async ({ chainId }) => {
+      try { const { filename, bytes } = await downloadChain(chainId); return ok(`Chain descargada: ${filename} (${bytes.length} bytes, ZIP .grs).`) }
+      catch (e) { return bad(`download_chain: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_run_chain',
+    'Ejecuta una CHAIN completa con el Runtime local: descarga su .grs y corre todos sus escenarios, generando datos. Requiere el Runtime instalado (GENROCKET_RUNTIME_CMD).',
+    { chainId: z.string().describe('externalId de la chain (de genrocket_list_chains)'), chainName: z.string().optional() },
+    async ({ chainId, chainName }) => {
+      try {
+        const r = await runChain(chainId, { chainName })
+        const outs = r.outputs.length ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n') : '  (sin archivos; revisa los receivers de los escenarios de la chain)'
+        return ok(`Chain ejecutada (exit ${r.exitCode}).\nCarpeta: ${r.dir}\nArchivos:\n${outs}`)
+      } catch (e) { return bad(`run_chain: ${e.message}`) }
+    }
+  )
+
+  server.tool(
     'genrocket_runtime_status',
     'Indica si el GenRocket Runtime local esta disponible: version de Java y si GENROCKET_RUNTIME_CMD esta configurado. Usalo antes de genrocket_run_scenario.',
     {},
@@ -664,14 +754,15 @@ export function registerGenRocketTools(server) {
         const withGen = norm.filter(a => a.generator)
         const done = []
         for (const a of withGen) {
+          const real = grNorm(a.name)  // GenRocket normaliza el nombre (fecha_nacimiento -> fechaNacimiento)
           try {
-            await deleteGenerators(domainId, a.name).catch(() => {})
-            await addGenerator(domainId, a.name, a.generator)
+            await deleteGenerators(domainId, real).catch(() => {})
+            await addGenerator(domainId, real, a.generator)
             for (const [pn, pv] of Object.entries(a.parameters || {})) {
-              await setGeneratorParameter(domainId, a.name, 'gen1', pn, pv)
+              await setGeneratorParameter(domainId, real, 'gen1', pn, pv)
             }
-            done.push(`${a.name}→${a.generator}`)
-          } catch (e) { done.push(`${a.name}: ERROR ${e.message}`) }
+            done.push(`${real}→${a.generator}`)
+          } catch (e) { done.push(`${real}: ERROR ${e.message}`) }
         }
         return ok(
           `Creados ${names.length} atributos: ${names.join(', ')}.` +
@@ -700,7 +791,7 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_add_domain_receiver',
-    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. receiverType comunes: CSVFileReceiver (CSV), JSONFileReceiver (JSON), XMLFileReceiver (XML), ExcelFileReceiver, TDMSQLReceiver / InsertUpdateSQLReceiver (SQL/BD). Despues configura outputPath/fileName con genrocket_set_receiver_parameter.',
+    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. Puedes usar alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Despues configura outputPath/fileName con genrocket_set_receiver_parameter.',
     {
       domainId: z.string(),
       receiverType: z.string().describe('Tipo de receiver, ej. CSVFileReceiver, JSONFileReceiver, XMLFileReceiver'),
@@ -777,18 +868,19 @@ export function registerGenRocketTools(server) {
     async ({ domainId, name, genType, parameters }) => {
       try {
         await createAttr(domainId, name, !genType)
-        const steps = ['atributo creado']
+        const real = grNorm(name)  // GenRocket normaliza el nombre al crear (fecha_nacimiento -> fechaNacimiento)
+        const steps = [`atributo creado (${real})`]
         if (genType) {
-          await addGenerator(domainId, name, genType)
+          await addGenerator(domainId, real, genType)
           steps.push(`generador ${genType} agregado`)
           for (const [pn, pv] of Object.entries(parameters || {})) {
-            await setGeneratorParameter(domainId, name, 'gen1', pn, pv)
+            await setGeneratorParameter(domainId, real, 'gen1', pn, pv)
             steps.push(`${pn}=${pv}`)
           }
         }
-        const gens = await listGeneratorsOf(domainId, name).catch(() => [])
+        const gens = await listGeneratorsOf(domainId, real).catch(() => [])
         const asignados = gens.map(g => g.generatorType || g.generator || g.name).join(', ') || '(ninguno)'
-        return ok(`Listo (${steps.join(' | ')}).\nGeneradores en "${name}": ${asignados}`)
+        return ok(`Listo (${steps.join(' | ')}).\nGeneradores en "${real}": ${asignados}`)
       } catch (e) { return bad(`create_attribute_with_generator: ${e.message}`) }
     }
   )

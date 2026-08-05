@@ -110,6 +110,16 @@ export class ConfigPanel {
   <h1>GenRocket · Configuración</h1>
   <div class="sub">Cada usuario configura aquí su propio tenant y credenciales. La contraseña se guarda cifrada (SecretStorage), nunca en el repositorio ni en texto plano.</div>
 
+  <div id="checklist" style="margin:12px 0;padding:10px 12px;border-radius:8px;background:var(--vscode-textBlockQuote-background);font-size:.86em;line-height:1.7;">
+    <b>Estado de la configuración</b>
+    <div id="ck_host">— Host / Tenant</div>
+    <div id="ck_user">— Usuario</div>
+    <div id="ck_pw">— Contraseña</div>
+    <div id="ck_org">— Organization ID</div>
+    <div id="ck_rt">— Runtime (opcional; solo para generar datos a archivos)</div>
+  </div>
+
+  <h2 style="font-size:1em;margin:14px 0 2px;">1) Conexión</h2>
   <label>Host / Tenant</label>
   <input id="baseUrl" placeholder="https://TU-ORG.genrocket.com" />
   <div class="hint">El tenant de tu organización, sin <code>/rest</code>.</div>
