@@ -263,6 +263,8 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **Skills incluidas:** `list_skills` (lista las skills empaquetadas) y `get_skill` (devuelve las instrucciones completas de una skill). El plugin trae varias **skills** (guías de trabajo) empaquetadas que el agente puede tomar por el MCP; ver la sección siguiente.
 
+**Graph-RAG local (sin LLM):** `index_docs` (indexa una carpeta de documentos: pasajes + grafo de conceptos) y `query_docs` (recupera los pasajes relevantes + conceptos relacionados para que Copilot redacte). 100% determinista, sin API keys ni Python; ver la sección siguiente.
+
 ## Skills empaquetadas (para el agente vía MCP)
 
 El plugin incluye, dentro del `.vsix`, un conjunto de **skills** (guías de trabajo en Markdown, en `mcp/skills/`). El servidor MCP las expone al agente (Copilot Chat) con dos tools:
@@ -273,6 +275,15 @@ El plugin incluye, dentro del `.vsix`, un conjunto de **skills** (guías de trab
 Skills incluidas: `writing-plans` (planear antes de codear), `sql-optimization` (tuning de consultas SQL), `generate-synthetic-data` (datos sintéticos para evaluar pipelines de IA), `ocr-document-processor` (OCR de escaneos/PDFs), `docx` (crear/editar documentos Word) y `business-analyst` (historias de usuario, criterios de aceptación, análisis de requerimientos).
 
 > Las skills provienen de repositorios de terceros y **corren con los permisos completos del agente**. Revísalas (`mcp/skills/<nombre>/SKILL.md`) antes de usarlas en trabajo sensible.
+
+## Graph-RAG local (sin LLM ni API keys)
+
+Búsqueda tipo *graph-RAG* sobre una carpeta de documentos, **100% determinista y local**. No usa ningún modelo: hace el trabajo determinista (indexar, construir un grafo de conceptos, recuperar pasajes) y le entrega el contexto al agente (Copilot), que redacta la respuesta — igual que el resto de las tools.
+
+- **`index_docs(folder)`** — indexa los documentos de texto de una carpeta (md, txt, csv, json, código, etc.): los parte en pasajes y arma un **grafo de conceptos por co-ocurrencia** (BM25 para el ranking, grafo para las relaciones). Guarda un índice "activo".
+- **`query_docs(query, k?)`** — recupera los `k` pasajes más relevantes (BM25) más los **conceptos relacionados** del grafo, y los devuelve para que el agente responda citando cada archivo.
+
+No requiere Python, ni la librería de Microsoft GraphRAG, ni una API key: por eso funciona con Copilot exactamente como el plugin ya trabaja (Copilot razona; las tools solo recuperan contexto). Para RAG con extracción de entidades por LLM a gran escala, usa la librería de Microsoft GraphRAG por separado (requiere Python + un LLM con cuota).
 
 ## Notas sobre GenRocket
 

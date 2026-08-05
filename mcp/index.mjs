@@ -14,6 +14,7 @@ import { registerGenRocketTools } from './genrocket.mjs'
 import { registerFakerTools } from './faker.mjs'
 import { registerPublishTools } from './publish.mjs'
 import { registerSkillsTools } from './skills.mjs'
+import { registerGraphRagTools } from './graphrag.mjs'
 
 // Versión desde el package.json de la extensión (evita drift con un número hardcodeado).
 let version = '0.0.0'
@@ -24,6 +25,7 @@ registerGenRocketTools(server)
 registerFakerTools(server)
 registerPublishTools(server)
 registerSkillsTools(server)
+registerGraphRagTools(server)
 
 const transport = new StdioServerTransport()
 await server.connect(transport)
