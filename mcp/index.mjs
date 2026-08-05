@@ -7,13 +7,18 @@
  *   GENROCKET_BASE_URL, GENROCKET_USERNAME, GENROCKET_PASSWORD, GENROCKET_ORG_ID
  *   GENROCKET_RUNTIME_CMD (usa {grs} y {dir}), GENROCKET_RUNTIME_OUTDIR
  */
+import { readFileSync } from 'node:fs'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerGenRocketTools } from './genrocket.mjs'
 import { registerFakerTools } from './faker.mjs'
 import { registerPublishTools } from './publish.mjs'
 
-const server = new McpServer({ name: 'genrocket-mcp', version: "0.1.26" })
+// Versión desde el package.json de la extensión (evita drift con un número hardcodeado).
+let version = '0.0.0'
+try { version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version || version } catch { /* usa fallback */ }
+
+const server = new McpServer({ name: 'genrocket-mcp', version })
 registerGenRocketTools(server)
 registerFakerTools(server)
 registerPublishTools(server)

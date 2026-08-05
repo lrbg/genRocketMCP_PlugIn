@@ -8,8 +8,11 @@ import { GitPanel } from './gitPanel'
 import { buildCaBundle, setLaunchEnv } from './ca'
 import { DbPanel } from './dbPanel'
 import { DashboardPanel } from './dashboard'
-
-const SECRET_KEY = 'genrocket.password'
+import {
+  McpServerEntry, McpFileCorruptError,
+  userMcpPathFromGlobalStorage, mergeMcpServers, hasMcpServer,
+} from './mcpConfig'
+import { SECRET_KEY, buildGenrocketRuntime, registerGenrocketMcpProvider } from './mcpProvider'
 // Hash SHA-256 de la palabra clave por defecto del dashboard (la contraseña NUNCA
 // va en texto plano en el repo). El usuario puede cambiarla con setDashboardPassword.
 const DEFAULT_DASH_HASH = '57626bcd9a191c81bb9b9500002c79cec1de96ec63c29d539394dab0c7187ac2'
@@ -39,12 +42,16 @@ export function activate(context: vscode.ExtensionContext) {
   const tree = new GenRocketTree(() => getConfig(context))
   context.subscriptions.push(vscode.window.registerTreeDataProvider('genrocketExplorer', tree))
 
+  // Registro NATIVO del servidor MCP (VS Code 1.101+): Copilot lo descubre solo.
+  // En editores viejos devuelve undefined y se usa el fallback por comando + mcp.json.
+  const mcpProvider = registerGenrocketMcpProvider(context)
+
   const reg = (id: string, fn: (...a: any[]) => any) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, fn))
 
   reg('genrocket.refresh', () => tree.refresh())
 
-  reg('genrocket.openConfig', () => ConfigPanel.show(context, () => tree.refresh()))
+  reg('genrocket.openConfig', () => ConfigPanel.show(context, () => { tree.refresh(); mcpProvider?.refresh() }))
 
   reg('genrocket.gitWizard', () => GitPanel.show(context))
 
@@ -102,6 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
     await context.secrets.store(SECRET_KEY, pass)
     vscode.window.showInformationMessage('GenRocket: contraseña guardada de forma segura.')
     tree.refresh()
+    mcpProvider?.refresh()
   })
 
   reg('genrocket.testConnection', async () => {
@@ -180,72 +188,92 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.registerMcpServer', async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent
     const c = vscode.workspace.getConfiguration('genrocket')
-    const caFile = await buildCaBundle(context)  // CA corporativa para que el MCP confíe en el proxy TLS
 
-    // Contraseñas desde SecretStorage (nunca en el repo)
-    const grPassword = (await context.secrets.get(SECRET_KEY)) || ''
-    const dbConns = (c.get<any[]>('dbConnections', []) || []).filter(d => d && d.name && d.jdbcUrl)
-    const dbOut: any[] = []
-    for (const d of dbConns) {
-      const pw = (await context.secrets.get('db.password.' + d.name)) || ''
-      dbOut.push({ name: d.name, type: d.type || 'oracle', jdbcUrl: d.jdbcUrl, user: d.user || '', driverJar: d.driverJar || '', password: pw })
-    }
+    // Escribe la config local (globalStorage/genrocket-config.json) y arma la entrada.
+    // mcp.json solo apunta a ese archivo (sin variables vacías ni prompts). Reusa el
+    // mismo helper que el provider nativo para no duplicar la lógica de credenciales.
+    const rt = await buildGenrocketRuntime(context)
+    const entry: McpServerEntry = { command: 'node', args: [rt.serverPath], env: rt.env }
 
-    // Token de GitHub del usuario (sesión existente, sin forzar login) para que el
-    // MCP pueda hacer push de datos generados a los repos. Nunca se guarda en el repo.
-    let githubToken = '', githubUser = '', githubEmail = ''
-    try {
-      const s = await vscode.authentication.getSession('github', ['repo'], { createIfNone: false })
-      if (s) {
-        githubToken = s.accessToken
-        githubUser = s.account.label
-        githubEmail = `${s.account.label}@users.noreply.github.com`
-      }
-    } catch { /* sin sesión de GitHub; el push pedirá conectarla */ }
-
-    // Ruta del registro de actividad (compartido entre extensión y MCP para el dashboard)
-    await vscode.workspace.fs.createDirectory(context.globalStorageUri)
-    const activityLog = vscode.Uri.joinPath(context.globalStorageUri, 'activity.jsonl').fsPath
-
-    // Archivo de config local (fuera del repo, en el almacenamiento del usuario)
-    const fullCfg = {
-      baseUrl: c.get('baseUrl', ''),
-      username: c.get('username', ''),
-      password: grPassword,
-      organizationId: c.get('organizationId', ''),
-      runtimeCommand: c.get('runtimeCommand', ''),
-      runtimeOutputDir: c.get('runtimeOutputDir', ''),
-      dbConnections: dbOut,
-      githubToken, githubUser, githubEmail,
-      activityLog,
-    }
-    const cfgFile = vscode.Uri.joinPath(context.globalStorageUri, 'genrocket-config.json')
-    await vscode.workspace.fs.writeFile(cfgFile, Buffer.from(JSON.stringify(fullCfg, null, 2), 'utf8'))
-
-    // mcp.json solo apunta al archivo de config (sin variables vacías ni prompts)
     const ws = vscode.workspace.workspaceFolders?.[0]
-    if (!ws) { if (!silent) { vscode.window.showWarningMessage('Configuración guardada. Abre una carpeta/workspace para registrar el MCP en Copilot Chat.') } return }
-    const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
-    const env: Record<string, string> = { GENROCKET_CONFIG_FILE: cfgFile.fsPath }
-    if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
-    const content = { servers: { genrocket: { command: 'node', args: [serverPath], env } } }
-    const dir = vscode.Uri.joinPath(ws.uri, '.vscode')
-    const file = vscode.Uri.joinPath(dir, 'mcp.json')
-    try {
-      await vscode.workspace.fs.createDirectory(dir)
-      await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(content, null, 2), 'utf8'))
-      if (!silent) {
-        vscode.window.showInformationMessage('MCP registrado en .vscode/mcp.json. Ábrelo y presiona "Start" (o "Restart" si ya estaba corriendo) para usarlo en Copilot Chat.')
-        vscode.window.showTextDocument(file)
+    const wsFile = ws ? vscode.Uri.joinPath(ws.uri, '.vscode', 'mcp.json') : undefined
+    const userFile = vscode.Uri.file(userMcpPathFromGlobalStorage(context.globalStorageUri.fsPath))
+
+    if (silent) {
+      // Viene de guardar la configuración: refresca donde ya esté registrado,
+      // sin preguntar nada ni crear archivos nuevos.
+      for (const f of [userFile, wsFile]) {
+        if (f && await mcpFileHasGenrocket(f)) {
+          try { await writeMcpEntry(f, entry) } catch { /* se avisará al registrar a mano */ }
+        }
       }
+      return
+    }
+
+    let scope = c.get<string>('mcpScope', 'ask')
+    if (scope !== 'user' && scope !== 'workspace') {
+      if (!wsFile) {
+        scope = 'user'
+      } else {
+        const pick = await vscode.window.showQuickPick(
+          [
+            { label: 'Todo VS Code', description: 'Disponible en cualquier ventana, aunque no haya carpeta abierta', scope: 'user' },
+            { label: 'Solo este proyecto', description: 'Escribe .vscode/mcp.json en la carpeta abierta', scope: 'workspace' },
+          ],
+          { title: 'GenRocket: ¿dónde registro el servidor MCP?', ignoreFocusOut: true },
+        )
+        if (!pick) { return }
+        scope = pick.scope
+        await c.update('mcpScope', scope, vscode.ConfigurationTarget.Global)
+      }
+    }
+
+    const target = (scope === 'workspace' && wsFile) ? wsFile : userFile
+    try {
+      await writeMcpEntry(target, entry)
+      const donde = target === userFile
+        ? 'MCP registrado para todo VS Code.'
+        : 'MCP registrado en .vscode/mcp.json de este proyecto.'
+      vscode.window.showInformationMessage(`${donde} Presiona "Start" (o "Restart" si ya estaba corriendo) para usarlo en Copilot Chat.`)
+      vscode.window.showTextDocument(target)
     } catch (e: any) {
-      if (!silent) { vscode.window.showErrorMessage(`No se pudo escribir mcp.json: ${e.message}`) }
+      if (e instanceof McpFileCorruptError) {
+        const abrir = 'Abrir archivo'
+        const r = await vscode.window.showErrorMessage(
+          `No toqué ${target.fsPath} porque no se pudo leer su contenido (${e.message}). Corrígelo y vuelve a registrar.`,
+          abrir,
+        )
+        if (r === abrir) { vscode.window.showTextDocument(target) }
+      } else {
+        vscode.window.showErrorMessage(`No se pudo escribir mcp.json: ${e.message}`)
+      }
     }
   })
 }
 
 function defaultDir(): string {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir()
+}
+
+/** Lee un mcp.json; devuelve cadena vacía si no existe. */
+async function readTextIfExists(file: vscode.Uri): Promise<string> {
+  try {
+    return Buffer.from(await vscode.workspace.fs.readFile(file)).toString('utf8')
+  } catch {
+    return ''
+  }
+}
+
+/** ¿Este mcp.json ya tiene registrado el servidor de GenRocket? */
+async function mcpFileHasGenrocket(file: vscode.Uri): Promise<boolean> {
+  return hasMcpServer(await readTextIfExists(file), 'genrocket')
+}
+
+/** Escribe la entrada conservando los demás servidores del archivo. */
+async function writeMcpEntry(file: vscode.Uri, entry: McpServerEntry): Promise<void> {
+  const merged = mergeMcpServers(await readTextIfExists(file), 'genrocket', entry)
+  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(file, '..'))
+  await vscode.workspace.fs.writeFile(file, Buffer.from(merged, 'utf8'))
 }
 
 export function deactivate() {}

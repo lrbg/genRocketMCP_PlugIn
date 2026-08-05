@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -27,9 +27,16 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:genrocketExplorer",
-    "onCommand:genrocket.openDashboard"
+    "onCommand:genrocket.openDashboard",
+    "onStartupFinished"
   ],
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "genrocket.mcpServers",
+        "label": "GenRocket"
+      }
+    ],
     "configuration": {
       "title": "GenRocket MCP",
       "properties": {
@@ -57,6 +64,21 @@
           "type": "string",
           "default": "",
           "description": "Carpeta base de salida del Runtime. Vacío usa una carpeta temporal del sistema."
+        },
+        "genrocket.mcpScope": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "user",
+            "workspace"
+          ],
+          "enumDescriptions": [
+            "Preguntar cada vez que haya una carpeta abierta",
+            "Registrar el MCP para todo VS Code (recomendado)",
+            "Registrar el MCP solo en la carpeta abierta (.vscode/mcp.json)"
+          ],
+          "default": "ask",
+          "description": "Dónde se registra el servidor MCP para Copilot Chat. Con 'user' funciona en cualquier ventana, aunque no haya carpeta abierta."
         },
         "genrocket.dashboard.teamRepo": {
           "type": "string",
@@ -240,11 +262,12 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test": "npm run compile && node --test test/"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "@types/vscode": "^1.96.0",
+    "@types/vscode": "^1.125.0",
     "typescript": "^5.5.0"
   }
 }
