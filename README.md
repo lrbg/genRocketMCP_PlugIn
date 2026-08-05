@@ -251,7 +251,7 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **GenRocket — vista previa (genera muestra por REST, sin Runtime):** `genrocket_preview_domain`, `genrocket_preview_attribute`.
 
-**GenRocket — autoría y generadores:** crear dominio/atributos, agregar y parametrizar generadores, sugerir generador por nombre de atributo, listar/crear receivers.
+**GenRocket — autoría y generadores:** crear dominio/atributos, **asignar un generador a un atributo** (`genrocket_assign_generator`: valida el nombre contra el catálogo real y sugiere parecidos; reemplaza el generador actual y acepta parámetros), agregar y parametrizar generadores, sugerir generador por nombre de atributo, ver el catálogo (`genrocket_available_generators`), listar/crear receivers.
 
 **GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`).
 
@@ -259,13 +259,27 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **Datos sintéticos (Faker):** `faker_field_types`, `faker_generate`.
 
-**Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_markdown` (un dominio → `.md` de contexto), `project_domains_to_markdown` (todos los dominios de un proyecto → un `.md` por dominio + índice con patrones → push opcional).
+**Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_dataset` (un dominio → datos reales por `domain/preview` → csv/json/xlsx → push opcional), `domain_to_markdown` (un dominio → `.md` de contexto), `project_domains_to_markdown` (todos los dominios de un proyecto → un `.md` por dominio + índice con patrones → push opcional).
 
 ## Notas sobre GenRocket
 
 - El plugin puede **autoría básica por REST** (crear dominios, atributos, agregar y parametrizar generadores, receivers). El diseño avanzado sigue siendo más cómodo en el **GenRocket Designer**.
 - La **vista previa** (`domain/preview`) genera una muestra por REST; para **volumen completo con receivers** se usa el **GenRocket Runtime** con la definición `.grs`.
 - GenRocket **no expone** por REST la lista de conexiones de BD de su plataforma (viven en la carpeta JDBC del Runtime). La integración BD→GenRocket nativa se hace con los generadores de consulta (familia `Query*`), que requieren el Runtime + su configuración JDBC.
+- Al **asignar un generador**, el `genType` debe ser un nombre del **catálogo real de tu organización** (`genrocket_available_generators`); no hay nombres genéricos garantizados (p.ej. puede no existir `FirstNameGen`). `genrocket_assign_generator` valida el nombre y te sugiere los parecidos.
+
+## Hallazgos validados de la API (contexto para el agente)
+
+Comportamientos reales de la Web REST API de GenRocket, verificados contra un tenant Cloud (v3.12). Útiles para que el agente no repita errores:
+
+- **Auth**: `POST /rest/login` devuelve el JWT en el **body como `accessToken`** (no en header). Las llamadas autenticadas usan el header **`x-auth-token`**; con `Authorization: Bearer` responde **401 "Missing issuer claim"**.
+- **Asignar generador = borra primero.** `POST /rest/generator/add` sobre un atributo que **ya tiene** generador **cuelga el servidor y devuelve 500** (página HTML). Hay que hacer `POST /rest/generator/deleteAll` **antes**. Las tools `genrocket_add_generator`, `genrocket_assign_generator` y `create_attribute_with_generator` ya lo hacen (reemplazan). Con el atributo vacío, el `add` responde en ~400 ms.
+- **Nombres de generador**: salen del catálogo `POST /rest/generators/list` (cientos por organización, muchos regionales). Un nombre inválido devuelve `success:false "Invalid Generator Name"` (no 500). Usa `genrocket_available_generators` / `genrocket_assign_generator` (valida y sugiere).
+- **Errores lógicos ≠ HTTP error**: la API suele responder **HTTP 200 con `{ success:false, errors:{...} }`** (domainId/atributo/generador no encontrado). Trátalos como error aunque el status sea 200.
+- **Nombres de endpoint**: para leer un ítem es **`/show`**, no `/get` ni `/list`. Existen y están validados: `project/list`, `projectVersion/show`, `domain/show` (trae atributos **con** sus generadores), `domain/list`, `scenario/list`, `chain/list`. **No** existen en este tenant: `project/get`, `domain/get`, `attribute/list`, `scenario/get` (404). `attribute/show` dio 404 aquí → usa `domain/show` para ver atributos.
+- **Nombre EXACTO del proyecto**: usa `genrocket_list_projects` antes de listar dominios/escenarios. Un nombre mal escrito (p.ej. un guión bajo de más) hace que `domain/list` devuelva 0 dominios y el flujo termine en un error confuso.
+- **Generación por REST**: solo `domain/preview` (muestras chicas, sin Runtime). **No hay generación masiva por REST** en este tenant (endpoints `*/generate` = 404; DataConnect "10k por llamada" no está expuesto por REST). Para volumen: **GenRocket Runtime** con la definición `.grs`.
+- Los servicios de descripción de generadores bajo **`/ws/generators*`** existen pero requieren **otra credencial** (dan 401 con `x-auth-token` y con Basic) — probablemente un API key de la organización.
 
 ## Licencia
 

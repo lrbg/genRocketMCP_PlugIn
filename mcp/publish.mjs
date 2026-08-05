@@ -330,6 +330,76 @@ export function registerPublishTools(server) {
   )
 
   server.tool(
+    'domain_to_dataset',
+    'Genera datos REALES de un dominio de GenRocket (vía /domain/preview, SIN necesidad del Runtime) y los exporta como archivo de DATOS (csv/json/xlsx). Opcionalmente los SUBE a uno o varios repos de GitHub (commit + push). A diferencia de domain_to_markdown (que produce un .md de contexto) y de genrocket_preview_domain (que solo muestra en pantalla), esto genera el DATASET usable. Si no pasas "repos", solo crea el archivo local (dry-run) y muestra la ruta.',
+    {
+      projectName: z.string().describe('Nombre exacto del proyecto en GenRocket.'),
+      domainName: z.string().describe('Nombre del dominio a exportar.'),
+      version: z.string().optional().describe('Versión del proyecto (default 1.0).'),
+      rows: z.number().int().positive().max(1000).optional().describe('Cuántas filas generar (default 50). El tenant puede topar el tamaño de la muestra del preview.'),
+      format: z.enum(['csv', 'json', 'xlsx']).optional().describe('Formato de salida (default csv).'),
+      fileName: z.string().optional().describe('Nombre base del archivo (default: el nombre del dominio).'),
+      repos: z.array(z.object({
+        repo: z.string().describe('owner/nombre'),
+        branch: z.string().optional().describe('Rama destino (default: rama por defecto del repo).'),
+        path: z.string().optional().describe('Ruta destino dentro del repo (default test-data/<dominio>.<formato>).'),
+      })).optional().describe('Destinos. 1..N repos. Si se omite, solo genera el archivo (no sube nada).'),
+      commitMessage: z.string().optional().describe('Mensaje de commit (default automático).'),
+    },
+    async ({ projectName, domainName, version = '1.0', rows: rowCount = 50, format = 'csv', fileName, repos = [], commitMessage }) => {
+      try {
+        const domains = await listDomains(projectName, version)
+        const dom = domains.find(d => (d.name || '').toLowerCase() === domainName.toLowerCase())
+        if (!dom) { return bad(`Dominio "${domainName}" no encontrado en ${projectName} v${version}. Disponibles: ${domains.map(d => d.name).join(', ') || '(ninguno)'}`) }
+        const domainId = dom.externalId || dom.id
+
+        // 1) datos reales del dominio vía preview (sin Runtime)
+        const prev = await previewDomain(domainId, rowCount)
+        const cols = prev.attributes || []
+        const data = prev.attributeData || []
+        if (!cols.length || !data.length) { return bad(`El dominio "${dom.name}" no devolvió datos en el preview. ¿Tiene atributos con generador asignado?`) }
+        const rowsObj = data.map(r => { const o = {}; cols.forEach((c, i) => { o[c] = r[i] }); return o })
+
+        // 2) archivo local
+        await mkdir(OUTDIR, { recursive: true })
+        const base = safeBase(fileName, dom.name)
+        const localFile = join(OUTDIR, `${base}.${format}`)
+        await writeDataset(format, cols, rowsObj, localFile)
+        logActivity({ action: 'dataset', domain: dom.name, rows: rowsObj.length, format, repos: repos.map(r => r.repo), pushed: repos.length > 0 })
+
+        const preview = rowsObj.slice(0, 5).map(r => cols.map(c => r[c]).join(' | ')).join('\n')
+        let out = `Generadas ${rowsObj.length} filas del dominio "${dom.name}" (${cols.length} columnas).\n`
+        out += `Columnas: ${cols.join(', ')}\nArchivo: ${localFile}\n\nVista previa (5):\n${cols.join(' | ')}\n${preview}\n`
+
+        // 3) push a repos (opcional)
+        if (repos.length) {
+          const { token, author } = githubAuth()
+          if (!token) {
+            out += `\nNO se subió a los repos: falta el token de GitHub. En VS Code, conecta tu cuenta de GitHub y vuelve a ejecutar "GenRocket: Registrar servidor MCP" (o guarda la configuración) para inyectar el token; luego reinicia el MCP.`
+            return ok(out)
+          }
+          const msg = commitMessage || `dataset GenRocket: ${dom.name} (${rowsObj.length} filas)`
+          out += `\nPublicando en ${repos.length} repo(s) como ${author.name}:`
+          for (const d of repos) {
+            const path = d.path || `test-data/${base}.${format}`
+            try {
+              const r = await publishFileToRepo(token, author, d.repo, localFile, path, d.branch, msg)
+              out += r.pushed
+                ? `\n  [OK] ${r.repo} -> ${r.path} (rama ${r.branch})`
+                : `\n  [-] ${r.repo} -> ${path}: ${r.note}`
+            } catch (e) {
+              out += `\n  [FALLO] ${d.repo}: ${e.message}`
+            }
+          }
+        } else {
+          out += `\n(No se especificaron repos: solo se generó el archivo. Pasa "repos" para subirlo.)`
+        }
+        return ok(out)
+      } catch (e) { return bad(`domain_to_dataset: ${e.message}`) }
+    },
+  )
+
+  server.tool(
     'project_domains_to_markdown',
     'Genera un .md de CONTEXTO por CADA dominio de un proyecto de GenRocket, más un ÍNDICE que detecta PATRONES entre dominios (atributos con el mismo nombre presentes en varios dominios = posibles relaciones). Ideal para que el agente entienda todos los dominios y sus relaciones. Opcionalmente publica todo a un repo (una carpeta) en un solo commit.',
     {

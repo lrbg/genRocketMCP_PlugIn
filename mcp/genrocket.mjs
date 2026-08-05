@@ -36,6 +36,9 @@ const PASSWORD = FILECFG.password || process.env.GENROCKET_PASSWORD || ''
 const ORG_ID   = FILECFG.organizationId || process.env.GENROCKET_ORG_ID || ''
 const RUNTIME_CMD    = FILECFG.runtimeCommand || process.env.GENROCKET_RUNTIME_CMD || ''
 const RUNTIME_OUTDIR = FILECFG.runtimeOutputDir || process.env.GENROCKET_RUNTIME_OUTDIR || join(tmpdir(), 'genrocket-runtime')
+// Tope de espera por request. Algunos endpoints (p.ej. /generator/list) pueden
+// colgarse; sin timeout el MCP quedaría bloqueado. Configurable por si un tenant es lento.
+const HTTP_TIMEOUT_MS = Number(FILECFG.httpTimeoutMs || process.env.GENROCKET_HTTP_TIMEOUT_MS || 90000)
 
 // Normaliza el host a "<origin>/rest" (acepta con/sin protocolo, con/sin /rest final).
 function grBase() {
@@ -83,15 +86,24 @@ async function getToken(forceFresh = false) {
 // (Authorization: Bearer devuelve 401). Reintenta una vez con token fresco ante 401/403.
 async function grPost(path, bodyObj, _retried = false) {
   const token = await getToken(_retried)
-  const res = await fetch(`${grBase()}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'accept': 'application/json',
-      'x-auth-token': token,
-    },
-    body: JSON.stringify(bodyObj),
-  })
+  let res
+  try {
+    res = await fetch(`${grBase()}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+        'x-auth-token': token,
+      },
+      body: JSON.stringify(bodyObj),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    })
+  } catch (e) {
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+      throw new Error(`GenRocket no respondió en ${Math.round(HTTP_TIMEOUT_MS / 1000)}s en ${path} (timeout)`)
+    }
+    throw e
+  }
   if ((res.status === 401 || res.status === 403) && !_retried) {
     cachedToken = null
     return grPost(path, bodyObj, true)
@@ -134,6 +146,20 @@ export async function listDomains(projectName, version = '1.0') {
     organizationId: requireOrg(), projectName, versionNumber: version,
   })
   return data?.domains ?? []
+}
+
+// Lista TODOS los proyectos de la organización con sus versiones (POST /project/list).
+// Útil para conocer el nombre EXACTO del proyecto (evita errores tipo doble guión bajo).
+export async function listProjects() {
+  const data = await grPost('/project/list', { organizationId: requireOrg() })
+  return data?.projects ?? []
+}
+
+// Dominio COMPLETO en una llamada (POST /domain/show): incluye atributos con sus
+// generadores, variables globales y receivers. Más eficiente que domain/list + generator/list.
+export async function showDomain(domainId) {
+  const data = await grPost('/domain/show', { organizationId: requireOrg(), domainId })
+  return data?.domain ?? data
 }
 
 export async function listGenerators(projectName, version, domainId, attributeName) {
@@ -401,6 +427,28 @@ export async function suggestGenerators(attributeName, limit = 15) {
   return { keywords: kws, generators: matches.slice(0, limit), total: all.length }
 }
 
+// Valida un nombre de generador contra el catálogo real de la organización.
+// Devuelve { exact } con el nombre bien escrito si existe, o { suggestions } con
+// parecidos (útil porque el catálogo tiene ~cientos de nombres no obvios).
+export async function resolveGenerator(name) {
+  const all = await fetchAllGenerators()
+  const raw = String(name || '').trim()
+  const lower = raw.toLowerCase()
+  const exact = all.find(g => (g.name || '').toLowerCase() === lower)
+  if (exact) { return { exact: exact.name, suggestions: [] } }
+  // Tokens del nombre pedido (parte camelCase y separadores), sin el sufijo "gen".
+  const tokens = raw.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+    .split(/[^a-z0-9]+/).filter(t => t && t !== 'gen' && t.length > 2)
+  const scored = all.map(g => {
+    const n = (g.name || '').toLowerCase()
+    let score = 0
+    if (lower && n.includes(lower)) { score += 5 }
+    for (const t of tokens) { if (n.includes(t)) { score += 1 } }
+    return { name: g.name, score }
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score)
+  return { exact: null, suggestions: scored.slice(0, 12).map(x => x.name) }
+}
+
 // ── Módulo de Base de Datos (JDBC de solo lectura: Oracle + SQL Server) ──────
 const JAVA_BIN = process.env.GENROCKET_JAVA || 'java'
 const DBQUERY_JAR = process.env.GENROCKET_DBQUERY_JAR || fileURLToPath(new URL('./db/dbquery.jar', import.meta.url))
@@ -556,6 +604,47 @@ export function registerGenRocketTools(server) {
       } catch (e) {
         return bad(`Error al listar dominios: ${e.message}`)
       }
+    }
+  )
+
+  server.tool(
+    'genrocket_list_projects',
+    'Lista TODOS los proyectos de la organización en GenRocket con sus versiones (POST /project/list). Úsalo para saber el nombre EXACTO de un proyecto antes de listar dominios/escenarios (evita errores de tipeo, p.ej. guiones bajos de más). Opcional: "filter" para buscar por texto en el nombre.',
+    {
+      filter: z.string().optional().describe('Filtra por texto en el nombre del proyecto (opcional).'),
+    },
+    async ({ filter }) => {
+      try {
+        let projects = await listProjects()
+        if (filter) { const f = filter.toLowerCase(); projects = projects.filter(p => (p.name || '').toLowerCase().includes(f)) }
+        if (!projects.length) { return ok(filter ? `Ningún proyecto coincide con "${filter}".` : 'Sin proyectos en la organización.') }
+        const lines = projects.map(p => {
+          const vers = (p.projectVersions || []).map(v => v.versionNumber).join(', ') || '1.0'
+          return `- ${p.name}  (v: ${vers})${p.locked ? '  [bloqueado]' : ''}`
+        }).join('\n')
+        return ok(`Proyectos (${projects.length}):\n${lines}`)
+      } catch (e) { return bad(`list_projects: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_show_domain',
+    'Muestra un dominio COMPLETO por su domainId (POST /domain/show): sus atributos con el generador asignado a cada uno, variables globales y receivers. Una sola llamada en vez de listar dominios + generadores por atributo. Usa el externalId del dominio (de genrocket_list_domains).',
+    {
+      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
+    },
+    async ({ domainId }) => {
+      try {
+        const d = await showDomain(domainId)
+        if (!d || !d.name) { return bad(`Dominio ${domainId} no encontrado.`) }
+        const attrs = d.attributes || []
+        const lines = attrs.map(a => {
+          const gen = (a.generators || []).map(g => g.generatorType || g.name).filter(Boolean).join(' -> ') || '(sin generador)'
+          return `  ${a.attributeOrder ?? ''} ${a.name}${a.primaryAttribute ? ' [PK]' : ''}: ${gen}`
+        }).join('\n')
+        const recv = (d.domainReceivers || []).map(r => r.receiverType || r.name).filter(Boolean).join(', ')
+        return ok(`Dominio "${d.name}" (${d.projectName || '?'} v${d.versionNumber || '?'}) — ${attrs.length} atributos:\n${lines}${recv ? `\nReceivers: ${recv}` : ''}`)
+      } catch (e) { return bad(`show_domain: ${e.message}`) }
     }
   )
 
@@ -828,11 +917,53 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_add_generator',
-    'Agrega un generador a un atributo (POST /generator/add). Payload: domainId, name (atributo), genType (ej. FlexibleDateRangeGen; usa genrocket_suggest_generators).',
+    'Asigna un generador a un atributo (POST /generator/add). IMPORTANTE: GenRocket se CUELGA (error 500) si se agrega un generador sobre uno ya existente, así que esta tool primero limpia (deleteAll) y luego asigna — es idempotente y REEMPLAZA el generador anterior. Payload: domainId, name (atributo), genType (ej. FlexibleDateRangeGen; usa genrocket_available_generators). Para validar el nombre contra el catálogo usa genrocket_assign_generator.',
     { domainId: z.string(), attributeName: z.string(), genType: z.string() },
     async ({ domainId, attributeName, genType }) => {
-      try { await addGenerator(domainId, attributeName, genType); return ok(`Generador "${genType}" agregado a "${attributeName}".`) }
-      catch (e) { return bad(`add_generator: ${e.message}`) }
+      try {
+        // Nunca agregar sobre un generador existente: el servidor se cuelga/500.
+        await deleteGenerators(domainId, attributeName).catch(() => {})
+        await addGenerator(domainId, attributeName, genType)
+        return ok(`Generador "${genType}" asignado a "${attributeName}" (se reemplazó el anterior si había).`)
+      } catch (e) { return bad(`add_generator: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_assign_generator',
+    'Asigna (carga) un generador a un atributo EXISTENTE de un dominio. VALIDA el genType contra el catálogo real de la organización (/generators/list) y, si no existe, sugiere nombres parecidos (el catálogo tiene cientos de nombres no obvios, p.ej. no hay "FirstNameGen" genérico). Por defecto REEMPLAZA el generador actual del atributo. Acepta parámetros del generador. Endpoint validado en GenRocket 3.12: POST /generator/add. Para ver nombres válidos usa genrocket_available_generators o genrocket_suggest_generators.',
+    {
+      domainId: z.string().describe('externalId del dominio (de genrocket_list_domains)'),
+      attributeName: z.string().describe('Nombre del atributo EXISTENTE al que se le carga el generador'),
+      genType: z.string().describe('Nombre del generador del catálogo (ej. EmailGen). Se valida y se corrige mayúsculas/minúsculas.'),
+      parameters: z.record(z.union([z.string(), z.number(), z.boolean()])).optional().describe('Parámetros del generador (objeto nombre:valor), opcional'),
+      replace: z.boolean().optional().describe('Quitar los generadores previos del atributo antes de asignar (default true)'),
+    },
+    async ({ domainId, attributeName, genType, parameters = {}, replace = true }) => {
+      try {
+        const { exact, suggestions } = await resolveGenerator(genType)
+        if (!exact) {
+          const hint = suggestions.length
+            ? `\nParecidos en el catálogo: ${suggestions.join(', ')}`
+            : '\nUsa genrocket_available_generators (con "filter") para ver el catálogo.'
+          return bad(`El generador "${genType}" no existe en el catálogo de la organización.${hint}`)
+        }
+        if (replace) { await deleteGenerators(domainId, attributeName).catch(() => {}) }
+        await addGenerator(domainId, attributeName, exact)
+        const steps = [`generador "${exact}" asignado a "${attributeName}"`]
+        for (const [pn, pv] of Object.entries(parameters || {})) {
+          await setGeneratorParameter(domainId, attributeName, 'gen1', pn, pv)
+          steps.push(`${pn}=${pv}`)
+        }
+        // Verificación best-effort: /generator/list a veces es lento; no bloquear el éxito por eso.
+        let verif
+        try {
+          const gens = await listGeneratorsOf(domainId, attributeName)
+          const names = gens.map(g => g.generatorType || g.generator || g.name).filter(Boolean)
+          verif = names.length ? `\nVerificado: ${names.join(', ')}` : '\n(El alta respondió OK; el listado quedó vacío al verificar.)'
+        } catch { verif = '\n(No se pudo verificar: el listado de generadores no respondió a tiempo; el alta respondió OK.)' }
+        return ok(`Listo: ${steps.join(' | ')}.${verif}`)
+      } catch (e) { return bad(`assign_generator: ${e.message}`) }
     }
   )
 
@@ -874,8 +1005,11 @@ export function registerGenRocketTools(server) {
         const real = grNorm(name)  // GenRocket normaliza el nombre al crear (fecha_nacimiento -> fechaNacimiento)
         const steps = [`atributo creado (${real})`]
         if (genType) {
-          await addGenerator(domainId, real, genType)
-          steps.push(`generador ${genType} agregado`)
+          const { exact, suggestions } = await resolveGenerator(genType)
+          if (!exact) { return bad(`El generador "${genType}" no existe en el catálogo.${suggestions.length ? ` Parecidos: ${suggestions.join(', ')}` : ''}`) }
+          await deleteGenerators(domainId, real).catch(() => {})  // evita el 500 por add sobre existente
+          await addGenerator(domainId, real, exact)
+          steps.push(`generador ${exact} asignado`)
           for (const [pn, pv] of Object.entries(parameters || {})) {
             await setGeneratorParameter(domainId, real, 'gen1', pn, pv)
             steps.push(`${pn}=${pv}`)
