@@ -4,3 +4,7 @@ out/
 *.vsix
 .DS_Store
 *.log
+# Carpetas de skills instaladas por la CLI `skills` (dev/symlinks). La copia
+# empaquetada y versionada es mcp/skills/.
+.agents/
+.claude/

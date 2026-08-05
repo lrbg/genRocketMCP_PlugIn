@@ -261,6 +261,19 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_dataset` (un dominio → datos reales por `domain/preview` → csv/json/xlsx → push opcional), `domain_to_markdown` (un dominio → `.md` de contexto), `project_domains_to_markdown` (todos los dominios de un proyecto → un `.md` por dominio + índice con patrones → push opcional).
 
+**Skills incluidas:** `list_skills` (lista las skills empaquetadas) y `get_skill` (devuelve las instrucciones completas de una skill). El plugin trae varias **skills** (guías de trabajo) empaquetadas que el agente puede tomar por el MCP; ver la sección siguiente.
+
+## Skills empaquetadas (para el agente vía MCP)
+
+El plugin incluye, dentro del `.vsix`, un conjunto de **skills** (guías de trabajo en Markdown, en `mcp/skills/`). El servidor MCP las expone al agente (Copilot Chat) con dos tools:
+
+- **`list_skills`** — lista el nombre y la descripción de cada skill.
+- **`get_skill`** (`name`) — devuelve el contenido completo de esa skill para que el agente la siga; si la skill trae scripts/archivos, incluye sus rutas (empaquetadas en la extensión).
+
+Skills incluidas: `writing-plans` (planear antes de codear), `sql-optimization` (tuning de consultas SQL), `generate-synthetic-data` (datos sintéticos para evaluar pipelines de IA), `ocr-document-processor` (OCR de escaneos/PDFs), `docx` (crear/editar documentos Word) y `business-analyst` (historias de usuario, criterios de aceptación, análisis de requerimientos).
+
+> Las skills provienen de repositorios de terceros y **corren con los permisos completos del agente**. Revísalas (`mcp/skills/<nombre>/SKILL.md`) antes de usarlas en trabajo sensible.
+
 ## Notas sobre GenRocket
 
 - El plugin puede **autoría básica por REST** (crear dominios, atributos, agregar y parametrizar generadores, receivers). El diseño avanzado sigue siendo más cómodo en el **GenRocket Designer**.

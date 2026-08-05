@@ -5,3 +5,6 @@ src/**
 .gitignore
 node_modules/**/*.map
 test/**
+.agents/**
+.claude/**
+scratchpad/**
