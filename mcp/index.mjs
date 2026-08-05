@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerGenRocketTools } from './genrocket.mjs'
 
-const server = new McpServer({ name: 'genrocket-mcp', version: '0.1.19' })
+const server = new McpServer({ name: 'genrocket-mcp', version: '0.1.20' })
 registerGenRocketTools(server)
 
 const transport = new StdioServerTransport()

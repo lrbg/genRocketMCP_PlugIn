@@ -250,6 +250,17 @@ export async function createAllAttributes(domainId, names, autoGenerator = true)
   return grPost('/attribute/createAll', { organizationId: requireOrg(), domainId, attributes: names, autoGenerator })
 }
 
+// Versiones del Runtime/Engine disponibles en el tenant (para instalar la correcta)
+export async function runtimeVersions() {
+  const org = requireOrg()
+  const [rt, eng] = await Promise.all([
+    grPost('/runtime/list', { organizationId: org }).catch(() => ({})),
+    grPost('/runtime/engine/list', { organizationId: org }).catch(() => ({})),
+  ])
+  const active = (o, key) => (o?.[key] || []).find(x => x.active)?.versionNumber
+  return { runtime: active(rt, 'grRuntimes'), engine: active(eng, 'engineJars') }
+}
+
 // Catálogo de generadores (cacheado en el proceso para que sea rápido)
 let _genCache = null
 async function fetchAllGenerators() {
@@ -549,6 +560,16 @@ export function registerGenRocketTools(server) {
         `Runtime configurado: ${s.runtimeConfigured ? 'si -> ' + s.runtimeCmd : 'NO (define GENROCKET_RUNTIME_CMD)'}`,
         `Carpeta de salida: ${s.outDir}`,
       ].join('\n'))
+    }
+  )
+
+  server.tool(
+    'genrocket_runtime_versions',
+    'Muestra la version ACTIVA del GenRocket Runtime y del Engine en tu tenant (para instalar/usar la version correcta del Runtime local). No genera datos.',
+    {},
+    async () => {
+      try { const v = await runtimeVersions(); return ok(`Runtime activo: ${v.runtime || '?'} | Engine activo: ${v.engine || '?'}`) }
+      catch (e) { return bad(`runtime_versions: ${e.message}`) }
     }
   )
 
