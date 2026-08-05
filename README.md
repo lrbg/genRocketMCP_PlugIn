@@ -96,6 +96,12 @@ Convierte un dominio de GenRocket en un `.md` que sirve de **contexto para el ag
 
 Ejemplo: *"documenta el dominio Poliza del proyecto Prueba_APIS como markdown, con generadores, y súbelo a `lrbg/appQA` en `docs/genrocket/poliza.md`"*.
 
+### Todos los dominios de un proyecto + detección de patrones
+
+**Tool:** `project_domains_to_markdown` — genera un `.md` por **cada** dominio del proyecto, más un **índice** (`README.md`) con una tabla de dominios y una sección de **atributos compartidos entre dominios** (mismo nombre en dos o más dominios = posible relación o patrón). Publica todo a un repo en un solo commit. Parámetros: `projectName`, `version`, `domainNames` (filtro opcional), `sampleRows`, `includeGenerators`, `maxDomains`, `repos`, `basePath` (default `docs/genrocket`).
+
+Ejemplo: *"documenta TODOS los dominios del proyecto UST_LOB_POC como contexto y súbelos a `lrbg/appQA` en docs/genrocket; quiero ver qué atributos comparten entre sí"*.
+
 ## Publicación a repos: cómo autentica
 
 El MCP hace `commit` + `push` con **tu sesión de GitHub de VS Code**: al registrar el servidor MCP, el plugin inyecta tu token de GitHub en la configuración local del MCP (nunca en el repositorio). Requisitos:
@@ -244,7 +250,7 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **Datos sintéticos (Faker):** `faker_field_types`, `faker_generate`.
 
-**Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_markdown` (dominio → `.md` de contexto → push opcional).
+**Siembra + publicación:** `seed_from_db_and_publish` (datos reales + sintéticos → csv/json/xlsx → push a N repos), `domain_to_markdown` (un dominio → `.md` de contexto), `project_domains_to_markdown` (todos los dominios de un proyecto → un `.md` por dominio + índice con patrones → push opcional).
 
 ## Notas sobre GenRocket
 
