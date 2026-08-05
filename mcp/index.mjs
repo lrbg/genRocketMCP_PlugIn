@@ -10,9 +10,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerGenRocketTools } from './genrocket.mjs'
+import { registerFakerTools } from './faker.mjs'
 
-const server = new McpServer({ name: 'genrocket-mcp', version: '0.1.21' })
+const server = new McpServer({ name: 'genrocket-mcp', version: '0.1.22' })
 registerGenRocketTools(server)
+registerFakerTools(server)
 
 const transport = new StdioServerTransport()
 await server.connect(transport)
