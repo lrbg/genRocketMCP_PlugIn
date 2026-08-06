@@ -18,6 +18,11 @@ export function graphragDir(context: vscode.ExtensionContext): string {
   return vscode.Uri.joinPath(context.globalStorageUri, 'graphrag').fsPath
 }
 
+/** Carpeta donde db_explore escribe el .md de contexto por base de datos. */
+export function dbContextDir(context: vscode.ExtensionContext): string {
+  return vscode.Uri.joinPath(context.globalStorageUri, 'db-context').fsPath
+}
+
 export interface GenrocketRuntime {
   /** Ruta absoluta al entrypoint del servidor MCP (mcp/index.mjs). */
   serverPath: string
@@ -105,6 +110,7 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
   const env: Record<string, string> = {
     GENROCKET_CONFIG_FILE: cfgFileUri.fsPath,
     GENROCKET_GRAPHRAG_DIR: graphragDir(context),   // índice compartido con el panel RAG
+    GENROCKET_DB_CONTEXT_DIR: dbContextDir(context), // .md de contexto por base de datos (db_explore)
   }
   if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
 

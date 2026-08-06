@@ -55,6 +55,8 @@ La **contraseña no va aquí**: al registrar/iniciar el MCP, VS Code la pide por
 
 **Tools MCP** (en Copilot Chat): `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query` — todas de solo lectura y con parámetro `connection` para elegir la base.
 
+**Explorar la base (contexto para el agente):** `db_explore` analiza toda la conexión —tablas, columnas, claves primarias, **relaciones (FK)** e índices— y **genera un archivo Markdown por base de datos** (`db-context/<conexión>.md`) que el agente usa como contexto para construir consultas. `db_read_context` lo relee sin re-escanear. Pídele por ejemplo: _"explora la base ventas y arma el contexto"_. Opciones: `maxTables` (default 400) e `includeRowCounts` (COUNT(*) por tabla, más lento).
+
 ## Datos sintéticos rápidos (Faker)
 
 Módulo independiente para generar **datos falsos** sin GenRocket ni BD, exportables a **JSON / CSV / Excel**. Útil para datos desechables de prueba.
@@ -255,7 +257,7 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`).
 
-**Bases de datos (solo lectura):** `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query`.
+**Bases de datos (solo lectura):** `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query`, `db_explore` (analiza el esquema completo y genera un `.md` de contexto por base), `db_read_context`.
 
 **Datos sintéticos (Faker):** `faker_field_types`, `faker_generate`.
 

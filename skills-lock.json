@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "skills": {
+    "business-analyst": {
+      "source": "duc01226/EasyPlatform",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/business-analyst/SKILL.md",
+      "computedHash": "71f15f83b6a76fc1f1558ea0070293e167a3ec7f9e17fefb45a56d6a1bd47b8f"
+    },
+    "docx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/docx/SKILL.md",
+      "computedHash": "59c70107f8eae818bdfca7da685a6e4111aa519638b667775b794cb74987ec47"
+    },
+    "generate-synthetic-data": {
+      "source": "hamelsmu/evals-skills",
+      "sourceType": "github",
+      "skillPath": "skills/generate-synthetic-data/SKILL.md",
+      "computedHash": "253b26dc898c4e47e77e8c2939072212f86290a92f06565f8a70505bb49469ae"
+    },
+    "ocr-document-processor": {
+      "source": "dkyazzentwatwa/chatgpt-skills",
+      "sourceType": "github",
+      "skillPath": "ocr-document-processor/SKILL.md",
+      "computedHash": "77bed505511791b2a0debc598954f03fec403eec7f2c2ccfb87320487f501b3f"
+    },
+    "sql-optimization": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/sql-optimization/SKILL.md",
+      "computedHash": "47c930907f25d67454ac8c2d155785eae3dce72242960d0c0e9ebf2ced9cd231"
+    },
+    "writing-plans": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "skillPath": "skills/writing-plans/SKILL.md",
+      "computedHash": "a8a8b0d07b744173079b25d26c6a189a0b5e7ddd80444ce92055b974dab7352b"
+    }
+  }
+}
