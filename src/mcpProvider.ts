@@ -1,13 +1,17 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { buildCaBundle } from './ca'
+import { refreshAccessToken } from './graphAuth'
 
 // Clave de SecretStorage para la contraseña de GenRocket (compartida con extension.ts).
 export const SECRET_KEY = 'genrocket.password'
 
-// Scopes de Microsoft Graph para leer SharePoint (sitios/archivos). Se piden con el
-// proveedor de autenticación nativo de VS Code (cuenta Microsoft del usuario).
-export const GRAPH_SCOPES = ['https://graph.microsoft.com/Sites.Read.All', 'https://graph.microsoft.com/Files.Read.All']
+// Auth de Microsoft Graph por device-code (el proveedor de VS Code no puede pedir
+// scopes de SharePoint). Client público por defecto: Microsoft Graph PowerShell.
+export const GRAPH_SCOPES = ['Sites.Read.All', 'Files.Read.All', 'offline_access']
+export const GRAPH_CLIENT_ID = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
+export const GRAPH_RT_KEY = 'genrocket.graph.refreshToken'
+export const GRAPH_AT_KEY = 'genrocket.graph.accessToken'
 
 export interface GenrocketRuntime {
   /** Ruta absoluta al entrypoint del servidor MCP (mcp/index.mjs). */
@@ -56,13 +60,21 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
     }
   } catch { /* sin sesión de GitHub; el push pedirá conectarla */ }
 
-  // Token de Microsoft Graph (sesión existente, sin forzar login) para leer SharePoint.
-  // El comando "Conectar SharePoint" fuerza el login/consent la primera vez.
+  // Token de Microsoft Graph obtenido por device-code (comando "Conectar SharePoint").
+  // Si hay refresh_token guardado, se renueva el access_token fresco en cada arranque.
   let graphToken = ''
   try {
-    const s = await vscode.authentication.getSession('microsoft', GRAPH_SCOPES, { createIfNone: false })
-    if (s) { graphToken = s.accessToken }
-  } catch { /* sin sesión de Microsoft; usar el comando Conectar SharePoint */ }
+    const rt = await context.secrets.get(GRAPH_RT_KEY)
+    if (rt) {
+      const clientId = c.get<string>('graph.clientId') || GRAPH_CLIENT_ID
+      const tenant = c.get<string>('graph.tenantId') || 'organizations'
+      const set = await refreshAccessToken(clientId, tenant, GRAPH_SCOPES, rt)
+      graphToken = set.access_token
+      if (set.refresh_token) { await context.secrets.store(GRAPH_RT_KEY, set.refresh_token) }
+    } else {
+      graphToken = (await context.secrets.get(GRAPH_AT_KEY)) || ''
+    }
+  } catch { /* token de Graph no disponible/expirado; reconectar con "Conectar SharePoint" */ }
 
   await vscode.workspace.fs.createDirectory(context.globalStorageUri)
   const activityLog = vscode.Uri.joinPath(context.globalStorageUri, 'activity.jsonl').fsPath

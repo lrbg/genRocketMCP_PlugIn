@@ -12,7 +12,11 @@ import {
   McpServerEntry, McpFileCorruptError,
   userMcpPathFromGlobalStorage, mergeMcpServers, hasMcpServer,
 } from './mcpConfig'
-import { SECRET_KEY, GRAPH_SCOPES, buildGenrocketRuntime, registerGenrocketMcpProvider } from './mcpProvider'
+import {
+  SECRET_KEY, GRAPH_SCOPES, GRAPH_CLIENT_ID, GRAPH_RT_KEY, GRAPH_AT_KEY,
+  buildGenrocketRuntime, registerGenrocketMcpProvider,
+} from './mcpProvider'
+import { requestDeviceCode, pollForToken } from './graphAuth'
 // Hash SHA-256 de la palabra clave por defecto del dashboard (la contraseña NUNCA
 // va en texto plano en el repo). El usuario puede cambiarla con setDashboardPassword.
 const DEFAULT_DASH_HASH = '57626bcd9a191c81bb9b9500002c79cec1de96ec63c29d539394dab0c7187ac2'
@@ -112,23 +116,36 @@ export function activate(context: vscode.ExtensionContext) {
     mcpProvider?.refresh()
   })
 
-  // Conecta la cuenta Microsoft del usuario y obtiene un token de Graph (Sites/Files.Read)
-  // para que el MCP pueda leer SharePoint. Fuerza el login/consent la primera vez.
+  // Conecta a Microsoft Graph por DEVICE CODE (el proveedor de VS Code no puede pedir
+  // scopes de SharePoint). El usuario ingresa un código en microsoft.com/devicelogin.
   reg('genrocket.connectSharePoint', async () => {
     try {
-      const session = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Conectando con Microsoft (SharePoint)…' },
-        () => vscode.authentication.getSession('microsoft', GRAPH_SCOPES, { createIfNone: true }),
+      const gc = vscode.workspace.getConfiguration('genrocket')
+      const clientId = gc.get<string>('graph.clientId') || GRAPH_CLIENT_ID
+      const tenant = gc.get<string>('graph.tenantId') || 'organizations'
+
+      const dc = await requestDeviceCode(clientId, tenant, GRAPH_SCOPES)
+      await vscode.env.clipboard.writeText(dc.user_code)
+      const abrir = 'Abrir e ingresar código'
+      const pick = await vscode.window.showInformationMessage(
+        `SharePoint: abre ${dc.verification_uri}, ingresa el código ${dc.user_code} (ya lo copié al portapapeles) e inicia sesión con tu cuenta de la organización.`,
+        { modal: true }, abrir,
       )
-      if (!session) { vscode.window.showWarningMessage('No se obtuvo sesión de Microsoft.'); return }
-      // Refresca la config del MCP para inyectar el token fresco de Graph y reinicia el server.
+      if (pick === abrir) { vscode.env.openExternal(vscode.Uri.parse(dc.verification_uri)) }
+
+      const tok = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'SharePoint: esperando que completes el inicio de sesión…' },
+        () => pollForToken(clientId, tenant, dc.device_code, dc.interval, dc.expires_in),
+      )
+      await context.secrets.store(GRAPH_RT_KEY, tok.refresh_token || '')
+      await context.secrets.store(GRAPH_AT_KEY, tok.access_token)
       await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
       mcpProvider?.refresh()
       vscode.window.showInformationMessage(
-        `SharePoint conectado como ${session.account.label}. En Copilot Chat reinicia el MCP de GenRocket y usa la tool "sharepoint_test_connection".`,
+        'SharePoint/Graph conectado. En Copilot Chat reinicia el MCP de GenRocket y usa la tool "sharepoint_test_connection".',
       )
     } catch (e: any) {
-      vscode.window.showErrorMessage(`No se pudo conectar con Microsoft/Graph: ${e.message}`)
+      vscode.window.showErrorMessage(`No se pudo conectar SharePoint: ${e.message}`)
     }
   })
 

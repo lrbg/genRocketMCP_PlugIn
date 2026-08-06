@@ -287,12 +287,16 @@ No requiere Python, ni la librería de Microsoft GraphRAG, ni una API key: por e
 
 ## SharePoint por Microsoft Graph (lectura)
 
-Para leer documentos directamente de SharePoint **sin sincronizar a local** (respetando lo colaborativo), el plugin usa **Microsoft Graph** con la cuenta Microsoft del usuario:
+Para leer documentos directamente de SharePoint **sin sincronizar a local** (respetando lo colaborativo), el plugin usa **Microsoft Graph** con **device code flow** (el proveedor de Microsoft integrado de VS Code no puede pedir scopes de SharePoint — da `AADSTS65002`):
 
-1. En VS Code ejecuta el comando **"GenRocket: Conectar SharePoint (Microsoft)"** — hace el login/consent de Microsoft (API nativa de VS Code) y pasa el token de Graph al MCP.
+1. En VS Code ejecuta el comando **"GenRocket: Conectar SharePoint (Microsoft)"** — te muestra un **código** (ya copiado al portapapeles) y abre `microsoft.com/devicelogin`. Inicia sesión con tu cuenta de la organización. El token de Graph se guarda cifrado (SecretStorage) y se renueva solo con el refresh token.
 2. En Copilot Chat usa la tool **`sharepoint_test_connection(siteUrl)`** — resuelve el sitio y lista sus bibliotecas y el contenido de la raíz. Sirve para **confirmar que el tenant permite leer el sitio** antes de indexar.
 
-> **El acceso lo decide el Azure AD de la organización.** `Sites.Read.All` / `Files.Read.All` suelen requerir **consentimiento de admin**; si el tenant lo bloquea, la tool lo dice claramente y hay que habilitarlo con IT. El token vive local (en la config del usuario), nunca en el repo. El indexado de esos documentos (extracción de docx/pdf/xlsx) hacia el graph-RAG es el siguiente paso, una vez confirmado el acceso.
+**Client / tenant** (settings, con defaults que funcionan en muchos tenants):
+- `genrocket.graph.clientId` — default el de **Microsoft Graph PowerShell** (`14d82eec-…`), un cliente público preconsentido en muchas organizaciones. Si tu empresa te da una **App Registration propia** con `Sites.Read.All`, pon aquí su client ID.
+- `genrocket.graph.tenantId` — default `organizations`; pon el Directory (tenant) ID si el login no resuelve tu tenant.
+
+> **El acceso final lo decide el Azure AD de la organización.** Si el tenant bloquea el device code o no consiente esos permisos, la tool lo dice claramente y hay que habilitarlo con IT (App Registration + admin consent). El token vive local (cifrado), **nunca en el repo**. El indexado de esos documentos (extracción de docx/pdf/xlsx) hacia el graph-RAG es el siguiente paso, una vez confirmado el acceso.
 
 ## Notas sobre GenRocket
 

@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -64,6 +64,16 @@
           "type": "string",
           "default": "",
           "description": "Carpeta base de salida del Runtime. Vacío usa una carpeta temporal del sistema."
+        },
+        "genrocket.graph.clientId": {
+          "type": "string",
+          "default": "14d82eec-204b-4c2f-b7e8-296a70dab67e",
+          "description": "Client ID (App Registration) para leer SharePoint por Microsoft Graph (device code). Default: Microsoft Graph PowerShell. Si tu organización te da una App Registration propia con Sites.Read.All, pon aquí su Application (client) ID."
+        },
+        "genrocket.graph.tenantId": {
+          "type": "string",
+          "default": "organizations",
+          "description": "Tenant de Azure AD para el login de SharePoint (device code). 'organizations' sirve para cuentas de trabajo; pon el Directory (tenant) ID de tu organización si el login no resuelve tu tenant."
         },
         "genrocket.mcpScope": {
           "type": "string",
