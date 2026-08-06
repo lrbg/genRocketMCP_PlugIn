@@ -280,7 +280,7 @@ Skills incluidas: `writing-plans` (planear antes de codear), `sql-optimization` 
 
 Búsqueda tipo *graph-RAG* sobre una carpeta de documentos, **100% determinista y local**. No usa ningún modelo: hace el trabajo determinista (indexar, construir un grafo de conceptos, recuperar pasajes) y le entrega el contexto al agente (Copilot), que redacta la respuesta — igual que el resto de las tools.
 
-- **`index_docs(folder)`** — indexa los documentos de texto de una carpeta (md, txt, csv, json, código, etc.): los parte en pasajes y arma un **grafo de conceptos por co-ocurrencia** (BM25 para el ranking, grafo para las relaciones). Guarda un índice "activo".
+- **`index_docs(folder)`** — indexa los documentos de una carpeta **extrayendo el texto de cada tipo**: **Word (.docx)**, **PDF**, **Excel (.xlsx)**, HTML y texto/código (md, txt, csv, json…). Los parte en pasajes y arma un **grafo de conceptos por co-ocurrencia** (BM25 para el ranking, grafo para las relaciones). Guarda un índice "activo". Ideal para una **carpeta de SharePoint descargada a local**.
 - **`query_docs(query, k?)`** — recupera los `k` pasajes más relevantes (BM25) más los **conceptos relacionados** del grafo, y los devuelve para que el agente responda citando cada archivo.
 
 No requiere Python, ni la librería de Microsoft GraphRAG, ni una API key: por eso funciona con Copilot exactamente como el plugin ya trabaja (Copilot razona; las tools solo recuperan contexto). Para RAG con extracción de entidades por LLM a gran escala, usa la librería de Microsoft GraphRAG por separado (requiere Python + un LLM con cuota).
