@@ -15,7 +15,7 @@ import { z } from 'zod'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, readdir, stat } from 'node:fs/promises'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, delimiter as pathDelimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -477,7 +477,18 @@ export async function dbRun(conn, sql, maxRows = 500) {
   if (!conn.driverJar) throw new Error(`La conexión "${conn.name}" no tiene driverJar (ruta al ojdbc / mssql-jdbc .jar).`)
   if (!conn.jdbcUrl) throw new Error(`La conexión "${conn.name}" no tiene jdbcUrl.`)
   assertSelectOnly(sql)
-  const cp = `${conn.driverJar}${pathDelimiter}${DBQUERY_JAR}`
+  // driverJar puede ser un .jar o una CARPETA. Si es carpeta, usamos el comodín de
+  // classpath de Java (`dir/*`) para incluir todos los .jar de ahí — así apuntar a
+  // la carpeta lib del Runtime también funciona.
+  let driverCp = conn.driverJar
+  try {
+    if (existsSync(conn.driverJar) && statSync(conn.driverJar).isDirectory()) {
+      driverCp = join(conn.driverJar, '*')
+    } else if (!existsSync(conn.driverJar)) {
+      throw new Error(`El driverJar de "${conn.name}" no existe: ${conn.driverJar}. Debe ser la ruta al .jar del driver (o a la carpeta que lo contiene).`)
+    }
+  } catch (e) { if (/no existe/.test(e.message)) throw e /* otros errores de stat: seguimos con el valor tal cual */ }
+  const cp = `${driverCp}${pathDelimiter}${DBQUERY_JAR}`
   return new Promise((resolve, reject) => {
     const child = spawn(JAVA_BIN, ['-cp', cp, 'DbQuery'], {
       env: { ...process.env, DB_URL: conn.jdbcUrl, DB_USER: conn.user || '', DB_PASSWORD: conn.password || '', DB_MAXROWS: String(maxRows) },
@@ -485,10 +496,23 @@ export async function dbRun(conn, sql, maxRows = 500) {
     let out = '', err = ''
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { err += d })
-    child.on('error', e => reject(new Error(`No se pudo ejecutar java: ${e.message}`)))
-    child.on('close', () => {
+    child.on('error', e => reject(new Error(`No se pudo ejecutar java (${JAVA_BIN}): ${e.message}. ¿Está Java en el PATH o mal configurado GENROCKET_JAVA?`)))
+    child.on('close', (code) => {
+      const raw = out.trim()
+      // El JVM puede fallar ANTES de imprimir nada (driver no encontrado en el
+      // classpath, UnsupportedClassVersionError, etc.): stdout vacío + error en stderr.
+      // Antes esto se tragaba (JSON.parse('{}')) y devolvía "(sin columnas)".
+      if (!raw) {
+        const detalle = err.trim() || `El helper JDBC terminó con código ${code} sin salida.`
+        const hint = /UnsupportedClassVersion/i.test(err)
+          ? ' El helper necesita un Java más nuevo: apunta GENROCKET_JAVA a un JDK 8+.'
+          : (/ClassNotFound|NoClassDefFound|No suitable driver/i.test(err)
+            ? ' No se encontró el driver JDBC: revisa que driverJar apunte al .jar correcto (ojdbc para Oracle, mssql-jdbc para SQL Server).'
+            : '')
+        return reject(new Error(detalle + hint))
+      }
       let j
-      try { j = JSON.parse(out || '{}') } catch { return reject(new Error(err.trim() || out.trim() || 'Sin salida del helper JDBC')) }
+      try { j = JSON.parse(raw) } catch { return reject(new Error(err.trim() || raw)) }
       if (j.error) reject(new Error(j.error)); else resolve(j)
     })
     child.stdin.write(sql); child.stdin.end()
@@ -526,6 +550,24 @@ function catalogSql(type, what, table) {
 // ── Helpers de formato ───────────────────────────────────────────
 const ok  = (text) => ({ content: [{ type: 'text', text }] })
 const bad = (text) => ({ content: [{ type: 'text', text }], isError: true })
+
+// Formatea el resultado de una corrida del Runtime (chain/escenario) mostrando
+// exit code, archivos y —clave para diagnosticar fallos de licencia/POI/etc.—
+// el stdout/stderr. Antes varias tools ocultaban stdout/stderr y había que correr
+// el Runtime a mano con -d true para ver el error real.
+function fmtRuntimeRun(titulo, r, emptyMsg) {
+  const outs = r.outputs.length
+    ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n')
+    : `  ${emptyMsg}`
+  const warn = r.exitCode !== 0 ? ` AVISO: el Runtime terminó con código ${r.exitCode}; revisa stderr abajo.` : ''
+  return [
+    `${titulo} (exit ${r.exitCode}).${warn}`,
+    `Carpeta: ${r.dir}`,
+    `Archivos:\n${outs}`,
+    r.stdout ? `\n--- stdout (fin) ---\n${r.stdout}` : '',
+    r.stderr ? `\n--- stderr (fin) ---\n${r.stderr}` : '',
+  ].filter(Boolean).join('\n')
+}
 
 // ── Registro de tools en el server MCP existente ─────────────────
 export function registerGenRocketTools(server) {
@@ -740,8 +782,7 @@ export function registerGenRocketTools(server) {
     async ({ chainId, chainName }) => {
       try {
         const r = await runChain(chainId, { chainName })
-        const outs = r.outputs.length ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n') : '  (sin archivos; revisa los receivers de los escenarios de la chain)'
-        return ok(`Chain ejecutada (exit ${r.exitCode}).\nCarpeta: ${r.dir}\nArchivos:\n${outs}`)
+        return ok(fmtRuntimeRun('Chain ejecutada', r, '(sin archivos; revisa los receivers de los escenarios de la chain)'))
       } catch (e) { return bad(`run_chain: ${e.message}`) }
     }
   )
@@ -780,17 +821,7 @@ export function registerGenRocketTools(server) {
     async ({ scenarioId, scenarioName }) => {
       try {
         const r = await runScenario(scenarioId, { scenarioName })
-        const outs = r.outputs.length
-          ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n')
-          : '  (no se generaron archivos nuevos; revisa los receivers configurados en el escenario)'
-        return ok([
-          `Runtime ejecutado (exit code ${r.exitCode}).`,
-          `Carpeta: ${r.dir}`,
-          `Archivos generados:`,
-          outs,
-          r.stdout ? `\n--- stdout (fin) ---\n${r.stdout}` : '',
-          r.stderr ? `\n--- stderr (fin) ---\n${r.stderr}` : '',
-        ].filter(Boolean).join('\n'))
+        return ok(fmtRuntimeRun('Runtime ejecutado', r, '(no se generaron archivos nuevos; revisa los receivers configurados en el escenario)'))
       } catch (e) {
         return bad(`No se pudo ejecutar el Runtime: ${e.message}`)
       }
@@ -1072,10 +1103,7 @@ export function registerGenRocketTools(server) {
     async ({ scenarioId, scenarioName }) => {
       try {
         const r = await runScenario(scenarioId, { scenarioName })
-        const outs = r.outputs.length
-          ? r.outputs.map(f => `  - ${f.name} (${f.bytes} bytes)`).join('\n')
-          : '  (sin archivos; revisa los receivers configurados en el escenario)'
-        return ok(`Runtime ejecutado (exit ${r.exitCode}).\nCarpeta: ${r.dir}\nArchivos:\n${outs}`)
+        return ok(fmtRuntimeRun('Runtime ejecutado', r, '(sin archivos; revisa los receivers configurados en el escenario)'))
       } catch (e) { return bad(`${name}: ${e.message}`) }
     }
   )

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import * as crypto from 'crypto'
+import * as fs from 'fs'
 import * as gr from './client'
 import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
@@ -11,7 +12,7 @@ import { RagPanel } from './ragPanel'
 import { DashboardPanel } from './dashboard'
 import {
   McpServerEntry, McpFileCorruptError,
-  userMcpPathFromGlobalStorage, mergeMcpServers, hasMcpServer,
+  userMcpPathFromGlobalStorage, mergeMcpServers, hasMcpServer, parseMcpJson,
 } from './mcpConfig'
 import {
   SECRET_KEY, GRAPH_SCOPES, GRAPH_CLIENT_ID, GRAPH_RT_KEY, GRAPH_AT_KEY,
@@ -50,6 +51,13 @@ export function activate(context: vscode.ExtensionContext) {
   // Registro NATIVO del servidor MCP (VS Code 1.101+): Copilot lo descubre solo.
   // En editores viejos devuelve undefined y se usa el fallback por comando + mcp.json.
   const mcpProvider = registerGenrocketMcpProvider(context)
+
+  // Auto-sanar mcp.json tras un auto-update de la extensión: la ruta del server en
+  // mcp.json incluye la versión (…genrocket-mcp-plugin-<ver>/mcp/index.mjs) y queda
+  // muerta al actualizar → "Process exited with code 1". Si detectamos esa ruta
+  // stale, la reescribimos con la actual. Solo cuando la ruta guardada ya no existe,
+  // para no pisar comentarios/otros servidores en configs sanas.
+  void healStaleMcpPaths(context, output).catch(() => { /* best-effort */ })
 
   const reg = (id: string, fn: (...a: any[]) => any) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, fn))
@@ -299,6 +307,35 @@ async function readTextIfExists(file: vscode.Uri): Promise<string> {
 /** ¿Este mcp.json ya tiene registrado el servidor de GenRocket? */
 async function mcpFileHasGenrocket(file: vscode.Uri): Promise<boolean> {
   return hasMcpServer(await readTextIfExists(file), 'genrocket')
+}
+
+/**
+ * Reescribe la entrada `genrocket` de mcp.json cuando su ruta de server quedó
+ * stale (la carpeta versionada de la extensión ya no existe tras un auto-update).
+ * Solo actúa si la ruta guardada NO existe en disco: en configs sanas no toca nada
+ * (así no borra comentarios ni reordena el archivo del usuario).
+ */
+async function healStaleMcpPaths(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
+  const rt = await buildGenrocketRuntime(context)
+  const entry: McpServerEntry = { command: 'node', args: [rt.serverPath], env: rt.env }
+  const ws = vscode.workspace.workspaceFolders?.[0]
+  const files = [
+    vscode.Uri.file(userMcpPathFromGlobalStorage(context.globalStorageUri.fsPath)),
+    ws ? vscode.Uri.joinPath(ws.uri, '.vscode', 'mcp.json') : undefined,
+  ].filter((f): f is vscode.Uri => !!f)
+
+  for (const f of files) {
+    try {
+      const text = await readTextIfExists(f)
+      if (!hasMcpServer(text, 'genrocket')) { continue }
+      const stored = parseMcpJson(text)?.servers?.genrocket
+      const storedPath = Array.isArray(stored?.args) ? stored.args.find((a: string) => /index\.mjs$/i.test(a)) : undefined
+      // Ruta sana (existe en disco) o ya es la actual → no tocar el archivo.
+      if (!storedPath || storedPath === rt.serverPath || fs.existsSync(storedPath)) { continue }
+      await writeMcpEntry(f, entry)
+      output.appendLine(`[GenRocket] mcp.json tenía una ruta de servidor obsoleta; se actualizó a la versión instalada en ${f.fsPath}`)
+    } catch { /* archivo corrupto o sin permiso: se resolverá al registrar a mano */ }
+  }
 }
 
 /** Escribe la entrada conservando los demás servidores del archivo. */
