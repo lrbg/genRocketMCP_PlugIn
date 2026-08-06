@@ -7,6 +7,7 @@ import { ConfigPanel } from './configPanel'
 import { GitPanel } from './gitPanel'
 import { buildCaBundle, setLaunchEnv } from './ca'
 import { DbPanel } from './dbPanel'
+import { RagPanel } from './ragPanel'
 import { DashboardPanel } from './dashboard'
 import {
   McpServerEntry, McpFileCorruptError,
@@ -60,6 +61,8 @@ export function activate(context: vscode.ExtensionContext) {
   reg('genrocket.gitWizard', () => GitPanel.show(context))
 
   reg('genrocket.openDb', () => DbPanel.show(context))
+
+  reg('genrocket.openRag', () => RagPanel.show(context))
 
   // ── Manager Dashboard (protegido por palabra clave — Directiva N.4 / OCP) ──
   reg('genrocket.openDashboard', async () => {

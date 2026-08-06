@@ -13,6 +13,11 @@ export const GRAPH_CLIENT_ID = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
 export const GRAPH_RT_KEY = 'genrocket.graph.refreshToken'
 export const GRAPH_AT_KEY = 'genrocket.graph.accessToken'
 
+/** Carpeta donde vive el índice del graph-RAG (compartida entre la UI y el MCP). */
+export function graphragDir(context: vscode.ExtensionContext): string {
+  return vscode.Uri.joinPath(context.globalStorageUri, 'graphrag').fsPath
+}
+
 export interface GenrocketRuntime {
   /** Ruta absoluta al entrypoint del servidor MCP (mcp/index.mjs). */
   serverPath: string
@@ -97,7 +102,10 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
   await vscode.workspace.fs.writeFile(cfgFileUri, Buffer.from(JSON.stringify(fullCfg, null, 2), 'utf8'))
 
   const serverPath = context.asAbsolutePath(path.join('mcp', 'index.mjs'))
-  const env: Record<string, string> = { GENROCKET_CONFIG_FILE: cfgFileUri.fsPath }
+  const env: Record<string, string> = {
+    GENROCKET_CONFIG_FILE: cfgFileUri.fsPath,
+    GENROCKET_GRAPHRAG_DIR: graphragDir(context),   // índice compartido con el panel RAG
+  }
   if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
 
   const version = (context.extension?.packageJSON?.version as string) || '0.0.0'

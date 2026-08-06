@@ -280,6 +280,8 @@ Skills incluidas: `writing-plans` (planear antes de codear), `sql-optimization` 
 
 Búsqueda tipo *graph-RAG* sobre una carpeta de documentos, **100% determinista y local**. No usa ningún modelo: hace el trabajo determinista (indexar, construir un grafo de conceptos, recuperar pasajes) y le entrega el contexto al agente (Copilot), que redacta la respuesta — igual que el resto de las tools.
 
+**Panel de configuración:** hay un icono de **librería** (📚) en la barra del explorador de GenRocket → abre el panel **"RAG de documentos"** donde eliges la carpeta (con "Examinar…"), le das **Indexar ahora** y ves el estado del índice (archivos, pasajes, conceptos, saltados). El índice se guarda en el mismo lugar que lee el MCP, así lo indexado desde el panel queda disponible para `query_docs` en Copilot.
+
 - **`index_docs(folder)`** — indexa los documentos de una carpeta **extrayendo el texto de cada tipo**: **Word (.docx)**, **PDF**, **Excel (.xlsx)**, HTML y texto/código (md, txt, csv, json…). Los parte en pasajes y arma un **grafo de conceptos por co-ocurrencia** (BM25 para el ranking, grafo para las relaciones). Guarda un índice "activo". Ideal para una **carpeta de SharePoint descargada a local**.
 - **`query_docs(query, k?)`** — recupera los `k` pasajes más relevantes (BM25) más los **conceptos relacionados** del grafo, y los devuelve para que el agente responda citando cada archivo.
 
