@@ -287,9 +287,9 @@ No requiere Python, ni la librería de Microsoft GraphRAG, ni una API key: por e
 
 ## SharePoint por Microsoft Graph (lectura)
 
-Para leer documentos directamente de SharePoint **sin sincronizar a local** (respetando lo colaborativo), el plugin usa **Microsoft Graph** con **device code flow** (el proveedor de Microsoft integrado de VS Code no puede pedir scopes de SharePoint — da `AADSTS65002`):
+Para leer documentos directamente de SharePoint **sin sincronizar a local** (respetando lo colaborativo), el plugin usa **Microsoft Graph** con **auth-code + el navegador del sistema** (no device code): así el navegador presenta la **sesión de Windows/Entra** del equipo, incluido el claim de **dispositivo administrado** que suelen exigir las políticas de Conditional Access. (El proveedor de Microsoft integrado de VS Code no sirve: no puede pedir scopes de SharePoint — da `AADSTS65002`.)
 
-1. En VS Code ejecuta el comando **"GenRocket: Conectar SharePoint (Microsoft)"** — te muestra un **código** (ya copiado al portapapeles) y abre `microsoft.com/devicelogin`. Inicia sesión con tu cuenta de la organización. El token de Graph se guarda cifrado (SecretStorage) y se renueva solo con el refresh token.
+1. En VS Code ejecuta el comando **"GenRocket: Conectar SharePoint (Microsoft)"** — abre el navegador en el login de Microsoft; inicia sesión con tu cuenta de la organización (usa el SSO del equipo). El token de Graph se guarda cifrado (SecretStorage) y se renueva solo con el refresh token.
 2. En Copilot Chat usa la tool **`sharepoint_test_connection(siteUrl)`** — resuelve el sitio y lista sus bibliotecas y el contenido de la raíz. Sirve para **confirmar que el tenant permite leer el sitio** antes de indexar.
 
 **Client / tenant** (settings, con defaults que funcionan en muchos tenants):

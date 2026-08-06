@@ -16,7 +16,7 @@ import {
   SECRET_KEY, GRAPH_SCOPES, GRAPH_CLIENT_ID, GRAPH_RT_KEY, GRAPH_AT_KEY,
   buildGenrocketRuntime, registerGenrocketMcpProvider,
 } from './mcpProvider'
-import { requestDeviceCode, pollForToken } from './graphAuth'
+import { authCodeFlow } from './graphAuth'
 // Hash SHA-256 de la palabra clave por defecto del dashboard (la contraseña NUNCA
 // va en texto plano en el repo). El usuario puede cambiarla con setDashboardPassword.
 const DEFAULT_DASH_HASH = '57626bcd9a191c81bb9b9500002c79cec1de96ec63c29d539394dab0c7187ac2'
@@ -116,26 +116,18 @@ export function activate(context: vscode.ExtensionContext) {
     mcpProvider?.refresh()
   })
 
-  // Conecta a Microsoft Graph por DEVICE CODE (el proveedor de VS Code no puede pedir
-  // scopes de SharePoint). El usuario ingresa un código en microsoft.com/devicelogin.
+  // Conecta a Microsoft Graph con auth-code + el NAVEGADOR DEL SISTEMA. El navegador
+  // (Edge en un equipo unido a Entra) presenta el claim de dispositivo administrado,
+  // así que satisface las políticas de Conditional Access que el device code no cumple.
   reg('genrocket.connectSharePoint', async () => {
     try {
       const gc = vscode.workspace.getConfiguration('genrocket')
       const clientId = gc.get<string>('graph.clientId') || GRAPH_CLIENT_ID
       const tenant = gc.get<string>('graph.tenantId') || 'organizations'
 
-      const dc = await requestDeviceCode(clientId, tenant, GRAPH_SCOPES)
-      await vscode.env.clipboard.writeText(dc.user_code)
-      const abrir = 'Abrir e ingresar código'
-      const pick = await vscode.window.showInformationMessage(
-        `SharePoint: abre ${dc.verification_uri}, ingresa el código ${dc.user_code} (ya lo copié al portapapeles) e inicia sesión con tu cuenta de la organización.`,
-        { modal: true }, abrir,
-      )
-      if (pick === abrir) { vscode.env.openExternal(vscode.Uri.parse(dc.verification_uri)) }
-
       const tok = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'SharePoint: esperando que completes el inicio de sesión…' },
-        () => pollForToken(clientId, tenant, dc.device_code, dc.interval, dc.expires_in),
+        { location: vscode.ProgressLocation.Notification, title: 'SharePoint: completa el inicio de sesión en el navegador…' },
+        () => authCodeFlow(clientId, tenant, GRAPH_SCOPES, (url) => { vscode.env.openExternal(vscode.Uri.parse(url)) }),
       )
       await context.secrets.store(GRAPH_RT_KEY, tok.refresh_token || '')
       await context.secrets.store(GRAPH_AT_KEY, tok.access_token)

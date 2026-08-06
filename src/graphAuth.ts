@@ -8,7 +8,12 @@
  * token de Graph con esos permisos. Solo HTTP; el usuario autentica en
  * microsoft.com/devicelogin. No se guarda ninguna contraseña.
  */
+import * as http from 'node:http'
+import * as crypto from 'node:crypto'
+
 const authority = (tenant: string) => `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0`
+
+const b64url = (buf: Buffer) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
 async function form(url: string, body: Record<string, string>): Promise<{ status: number; json: any }> {
   const res = await fetch(url, {
@@ -77,4 +82,63 @@ export async function refreshAccessToken(clientId: string, tenant: string, scope
     throw new Error(json.error_description || json.error || `refresh HTTP ${status}`)
   }
   return json as TokenSet
+}
+
+/**
+ * Auth-code + PKCE con el NAVEGADOR DEL SISTEMA y redirect a loopback.
+ * A diferencia del device code, el navegador (Edge en un equipo unido a Entra)
+ * presenta el PRT/claim de dispositivo administrado, así que satisface las
+ * políticas de Conditional Access que exigen dispositivo compliant.
+ * Levanta un servidor local efímero para recibir el redirect.
+ */
+export async function authCodeFlow(clientId: string, tenant: string, scopes: string[], openBrowser: (url: string) => void): Promise<TokenSet> {
+  const verifier = b64url(crypto.randomBytes(32))
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest())
+  const state = b64url(crypto.randomBytes(16))
+
+  return await new Promise<TokenSet>((resolve, reject) => {
+    let redirectUri = ''
+    let timer: NodeJS.Timeout
+
+    const finish = (fn: () => void) => { clearTimeout(timer); try { server.close() } catch { /* ya cerrado */ } fn() }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://localhost')
+      if (!url.searchParams.has('code') && !url.searchParams.has('error')) { res.writeHead(404); res.end(); return }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end('<html><body style="font-family:sans-serif;padding:2rem"><h3>GenRocket · SharePoint</h3><p>Listo. Ya puedes cerrar esta pestaña y volver a VS Code.</p></body></html>')
+
+      const err = url.searchParams.get('error')
+      if (err) { finish(() => reject(new Error(url.searchParams.get('error_description') || err))); return }
+      if (url.searchParams.get('state') !== state) { finish(() => reject(new Error('state no coincide (posible CSRF)'))); return }
+      const code = url.searchParams.get('code')
+      if (!code) { finish(() => reject(new Error('sin authorization code'))); return }
+      try {
+        const { status, json } = await form(`${authority(tenant)}/token`, {
+          grant_type: 'authorization_code', client_id: clientId, code, redirect_uri: redirectUri, code_verifier: verifier, scope: scopes.join(' '),
+        })
+        if (status !== 200 || !json.access_token) { finish(() => reject(new Error(json.error_description || json.error || `token HTTP ${status}`))); return }
+        finish(() => resolve(json as TokenSet))
+      } catch (e) { finish(() => reject(e as Error)) }
+    })
+
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as any).port
+      redirectUri = `http://localhost:${port}`
+      const p = new URLSearchParams({
+        client_id: clientId,
+        response_type: 'code',
+        redirect_uri: redirectUri,
+        response_mode: 'query',
+        scope: scopes.join(' '),
+        state,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        prompt: 'select_account',
+      })
+      openBrowser(`${authority(tenant)}/authorize?${p.toString()}`)
+    })
+    timer = setTimeout(() => finish(() => reject(new Error('Tiempo agotado esperando el login en el navegador.'))), 5 * 60 * 1000)
+  })
 }
