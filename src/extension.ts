@@ -12,7 +12,7 @@ import {
   McpServerEntry, McpFileCorruptError,
   userMcpPathFromGlobalStorage, mergeMcpServers, hasMcpServer,
 } from './mcpConfig'
-import { SECRET_KEY, buildGenrocketRuntime, registerGenrocketMcpProvider } from './mcpProvider'
+import { SECRET_KEY, GRAPH_SCOPES, buildGenrocketRuntime, registerGenrocketMcpProvider } from './mcpProvider'
 // Hash SHA-256 de la palabra clave por defecto del dashboard (la contraseña NUNCA
 // va en texto plano en el repo). El usuario puede cambiarla con setDashboardPassword.
 const DEFAULT_DASH_HASH = '57626bcd9a191c81bb9b9500002c79cec1de96ec63c29d539394dab0c7187ac2'
@@ -110,6 +110,26 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('GenRocket: contraseña guardada de forma segura.')
     tree.refresh()
     mcpProvider?.refresh()
+  })
+
+  // Conecta la cuenta Microsoft del usuario y obtiene un token de Graph (Sites/Files.Read)
+  // para que el MCP pueda leer SharePoint. Fuerza el login/consent la primera vez.
+  reg('genrocket.connectSharePoint', async () => {
+    try {
+      const session = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Conectando con Microsoft (SharePoint)…' },
+        () => vscode.authentication.getSession('microsoft', GRAPH_SCOPES, { createIfNone: true }),
+      )
+      if (!session) { vscode.window.showWarningMessage('No se obtuvo sesión de Microsoft.'); return }
+      // Refresca la config del MCP para inyectar el token fresco de Graph y reinicia el server.
+      await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
+      mcpProvider?.refresh()
+      vscode.window.showInformationMessage(
+        `SharePoint conectado como ${session.account.label}. En Copilot Chat reinicia el MCP de GenRocket y usa la tool "sharepoint_test_connection".`,
+      )
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`No se pudo conectar con Microsoft/Graph: ${e.message}`)
+    }
   })
 
   reg('genrocket.testConnection', async () => {

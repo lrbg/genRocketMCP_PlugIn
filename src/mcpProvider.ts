@@ -5,6 +5,10 @@ import { buildCaBundle } from './ca'
 // Clave de SecretStorage para la contraseña de GenRocket (compartida con extension.ts).
 export const SECRET_KEY = 'genrocket.password'
 
+// Scopes de Microsoft Graph para leer SharePoint (sitios/archivos). Se piden con el
+// proveedor de autenticación nativo de VS Code (cuenta Microsoft del usuario).
+export const GRAPH_SCOPES = ['https://graph.microsoft.com/Sites.Read.All', 'https://graph.microsoft.com/Files.Read.All']
+
 export interface GenrocketRuntime {
   /** Ruta absoluta al entrypoint del servidor MCP (mcp/index.mjs). */
   serverPath: string
@@ -52,6 +56,14 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
     }
   } catch { /* sin sesión de GitHub; el push pedirá conectarla */ }
 
+  // Token de Microsoft Graph (sesión existente, sin forzar login) para leer SharePoint.
+  // El comando "Conectar SharePoint" fuerza el login/consent la primera vez.
+  let graphToken = ''
+  try {
+    const s = await vscode.authentication.getSession('microsoft', GRAPH_SCOPES, { createIfNone: false })
+    if (s) { graphToken = s.accessToken }
+  } catch { /* sin sesión de Microsoft; usar el comando Conectar SharePoint */ }
+
   await vscode.workspace.fs.createDirectory(context.globalStorageUri)
   const activityLog = vscode.Uri.joinPath(context.globalStorageUri, 'activity.jsonl').fsPath
 
@@ -66,6 +78,7 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
     runtimeOutputDir: c.get('runtimeOutputDir', ''),
     dbConnections: dbOut,
     githubToken, githubUser, githubEmail,
+    graphToken,
     activityLog,
   }
   const cfgFileUri = vscode.Uri.joinPath(context.globalStorageUri, 'genrocket-config.json')

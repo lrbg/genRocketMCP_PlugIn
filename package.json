@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -194,6 +194,10 @@
       {
         "command": "genrocket.registerMcpServer",
         "title": "GenRocket: Registrar servidor MCP (Copilot Chat)"
+      },
+      {
+        "command": "genrocket.connectSharePoint",
+        "title": "GenRocket: Conectar SharePoint (Microsoft)"
       },
       {
         "command": "genrocket.downloadScenario",

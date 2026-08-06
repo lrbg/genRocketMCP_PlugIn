@@ -285,6 +285,15 @@ Búsqueda tipo *graph-RAG* sobre una carpeta de documentos, **100% determinista 
 
 No requiere Python, ni la librería de Microsoft GraphRAG, ni una API key: por eso funciona con Copilot exactamente como el plugin ya trabaja (Copilot razona; las tools solo recuperan contexto). Para RAG con extracción de entidades por LLM a gran escala, usa la librería de Microsoft GraphRAG por separado (requiere Python + un LLM con cuota).
 
+## SharePoint por Microsoft Graph (lectura)
+
+Para leer documentos directamente de SharePoint **sin sincronizar a local** (respetando lo colaborativo), el plugin usa **Microsoft Graph** con la cuenta Microsoft del usuario:
+
+1. En VS Code ejecuta el comando **"GenRocket: Conectar SharePoint (Microsoft)"** — hace el login/consent de Microsoft (API nativa de VS Code) y pasa el token de Graph al MCP.
+2. En Copilot Chat usa la tool **`sharepoint_test_connection(siteUrl)`** — resuelve el sitio y lista sus bibliotecas y el contenido de la raíz. Sirve para **confirmar que el tenant permite leer el sitio** antes de indexar.
+
+> **El acceso lo decide el Azure AD de la organización.** `Sites.Read.All` / `Files.Read.All` suelen requerir **consentimiento de admin**; si el tenant lo bloquea, la tool lo dice claramente y hay que habilitarlo con IT. El token vive local (en la config del usuario), nunca en el repo. El indexado de esos documentos (extracción de docx/pdf/xlsx) hacia el graph-RAG es el siguiente paso, una vez confirmado el acceso.
+
 ## Notas sobre GenRocket
 
 - El plugin puede **autoría básica por REST** (crear dominios, atributos, agregar y parametrizar generadores, receivers). El diseño avanzado sigue siendo más cómodo en el **GenRocket Designer**.
