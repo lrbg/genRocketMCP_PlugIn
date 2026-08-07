@@ -456,6 +456,19 @@ const RECEIVER_TYPES = [
   { alias: 'json',  type: 'JSONFileReceiver',      desc: 'JSON.' },
   { alias: 'xml',   type: 'XMLFileReceiver',       desc: 'XML.' },
 ]
+
+// Sello de tiempo ddmmyyhhmmss (local) para nombrar receivers de forma única.
+function ddmmyyhhmmss(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0')
+  return p(d.getDate()) + p(d.getMonth() + 1) + p(d.getFullYear() % 100) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+}
+
+// Nombre por defecto del receiver: <nombreDominio> + ddmmyyhhmmss.
+async function defaultReceiverName(domainId) {
+  let domName = ''
+  try { const d = await showDomain(domainId); domName = (d && d.name) ? d.name : '' } catch { /* si falla, seguimos sin nombre de dominio */ }
+  return `${domName || 'receiver'}${ddmmyyhhmmss()}`
+}
 export async function addDomainReceiver(domainId, receiverType, receiverName) {
   const rt = RECEIVER_MAP[String(receiverType || '').toLowerCase()] || receiverType
   return grPost('/domainReceiver/add', { organizationId: requireOrg(), domainId, receiverType: rt, receiverName: receiverName || rt })
@@ -1060,15 +1073,18 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_add_domain_receiver',
-    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. IMPORTANTE: si el usuario NO especificó el tipo, primero llama a genrocket_available_receivers, MUÉSTRALE las opciones y PREGÚNTALE cuál quiere; no elijas tú el tipo. Acepta alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Después configura outputPath/fileName con genrocket_set_receiver_parameter.',
+    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. IMPORTANTE: si el usuario NO especificó el tipo, primero llama a genrocket_available_receivers, MUÉSTRALE las opciones y PREGÚNTALE cuál quiere; no elijas tú el tipo. Acepta alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Si no pasas receiverName, se nombra automáticamente como <nombreDelDominio>+ddmmyyhhmmss. Después configura outputPath/fileName con genrocket_set_receiver_parameter.',
     {
       domainId: z.string(),
       receiverType: z.string().describe('Tipo o alias del receiver (csv, excel, json, xml, o el nombre exacto). Confírmalo con el usuario antes de llamar.'),
-      receiverName: z.string().optional().describe('Nombre (default = receiverType)'),
+      receiverName: z.string().optional().describe('Nombre del receiver. Si se omite, se usa <nombreDelDominio>+ddmmyyhhmmss automáticamente.'),
     },
     async ({ domainId, receiverType, receiverName }) => {
-      try { await addDomainReceiver(domainId, receiverType, receiverName); return ok(`Receiver "${receiverName || receiverType}" (${RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType}) agregado al dominio.`) }
-      catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
+      try {
+        const name = receiverName || await defaultReceiverName(domainId)
+        await addDomainReceiver(domainId, receiverType, name)
+        return ok(`Receiver "${name}" (${RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType}) agregado al dominio.`)
+      } catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
     }
   )
 
