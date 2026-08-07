@@ -142,7 +142,19 @@ export class GenrocketMcpProvider {
     const Stdio: any = (vscode as any).McpStdioServerDefinition
     const def = new Stdio('GenRocket', 'node', [rt.serverPath], rt.env, rt.version)
     def.cwd = vscode.Uri.file(path.dirname(rt.serverPath))
-    return [def]
+    const defs: any[] = [def]
+
+    // "Manos" web: registra el Playwright MCP oficial de Microsoft como servidor
+    // compañero (se corre con npx, NO se empaqueta). Se conecta por CDP al Edge que
+    // el usuario abrió ya logueado en el Designer, para lo que la API REST no puede
+    // (crear escenario, ligar el receiver al dominio primario del escenario, armar chains).
+    const c = vscode.workspace.getConfiguration('genrocket')
+    if (c.get<boolean>('web.enabled')) {
+      const cdp = c.get<string>('web.cdpEndpoint') || 'http://localhost:9222'
+      const pw = new Stdio('Playwright (GenRocket web)', 'npx', ['-y', '@playwright/mcp@latest', '--cdp-endpoint', cdp], {}, '1.0.0')
+      defs.push(pw)
+    }
+    return defs
   }
 
   async resolveMcpServerDefinition(server: any): Promise<any> {

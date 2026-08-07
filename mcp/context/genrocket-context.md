@@ -88,6 +88,27 @@ conocidos y te dice qué herramienta usar en cada caso.
   reemplaza (`genrocket_assign_generator`), que borra antes.
 - **Necesitas una chain y no existe** → créala en el Designer web; no hay API.
 
+## Manos web (Playwright) — para lo que la API REST NO puede
+
+Si está activo el servidor **Playwright (GenRocket web)** (comando "GenRocket: Activar
+automatización web"), tienes herramientas de navegador (browser_navigate, browser_snapshot,
+browser_click, browser_type, etc.) conectadas por CDP al **Edge ya logueado** en el Designer
+(`app.genrocket.com`). Úsalas SOLO para lo que REST no permite. Reglas de oro:
+- **Lee la página antes de actuar** (browser_snapshot) y haz clic por lo que ves; no asumas selectores.
+- No inicies sesión tú: el usuario ya está logueado. Si ves login, pídeselo.
+- Confirma con el usuario antes de guardar/crear algo irreversible.
+
+Flujos del Designer:
+- **Ligar el receiver al dominio primario del escenario** (causa típica de "0 archivos"
+  aunque el dominio ya tenga receiver): abre el proyecto/versión → abre el **escenario**
+  → sección **Scenario Domains** → selecciona el dominio **Primary** → asígnale el
+  receiver ahí (no basta con tenerlo a nivel dominio) → **Save**.
+- **Crear un escenario**: proyecto/versión → dominio → **Create Scenario** → nombre → Save.
+  (También existe `genrocket_create_scenario` por REST; si falla, usa la web y revisa
+  `genrocket_read_log` para el error REST.)
+- **Crear/armar una chain**: sección **Chains** → **New Chain** → arrastra los escenarios
+  en orden → Save. Luego se ejecuta con `genrocket_run_chain`.
+
 ## Reglas
 
 - BD: **solo lectura**. Nunca ejecutes DML/DDL.

@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
+import * as cp from 'child_process'
 import * as gr from './client'
 import { GenRocketTree, GRNode } from './tree'
 import { ConfigPanel } from './configPanel'
@@ -149,6 +150,49 @@ export function activate(context: vscode.ExtensionContext) {
       )
     } catch (e: any) {
       vscode.window.showErrorMessage(`No se pudo conectar SharePoint: ${e.message}`)
+    }
+  })
+
+  reg('genrocket.enableWebAutomation', async () => {
+    try {
+      const gc = vscode.workspace.getConfiguration('genrocket')
+      const cdp = gc.get<string>('web.cdpEndpoint') || 'http://localhost:9222'
+      const port = (cdp.match(/:(\d+)/) || [])[1] || '9222'
+      const profileDir = vscode.Uri.joinPath(context.globalStorageUri, 'edge-cdp').fsPath
+
+      // Intento best-effort de abrir Edge con depuración remota (Windows). Si no se
+      // puede, damos el comando exacto para que el usuario lo corra a mano.
+      let launched = false
+      const edgeCandidates = process.platform === 'win32'
+        ? ['C\u003a\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', 'C\u003a\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe']
+        : process.platform === 'darwin'
+          ? ['/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge']
+          : ['microsoft-edge', 'msedge']
+      const edge = edgeCandidates.find(p => { try { return p.indexOf('/') < 0 || fs.existsSync(p) } catch { return false } })
+      const args = [`--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, 'https://app.genrocket.com']
+      if (edge) {
+        try {
+          const child = cp.spawn(edge, args, { detached: true, stdio: 'ignore' })
+          child.unref()
+          launched = true
+        } catch { /* cae al mensaje manual */ }
+      }
+
+      await gc.update('web.enabled', true, vscode.ConfigurationTarget.Global)
+      await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
+      mcpProvider?.refresh()
+
+      const manual = process.platform === 'win32'
+        ? `"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" --remote-debugging-port=${port} --user-data-dir="${profileDir}"`
+        : `msedge --remote-debugging-port=${port} --user-data-dir="${profileDir}"`
+      const msg = launched
+        ? `Automatización web activada. Se abrió Edge con depuración (puerto ${port}). Inicia sesión en el Designer si te lo pide, luego reinicia el MCP en Copilot. El agente ya puede operar la web con Playwright.`
+        : `Automatización web activada. Abre Edge con depuración remota y quedará listo. Copia este comando y córrelo (cierra Edge primero):\n\n${manual}`
+      const copiar = 'Copiar comando'
+      const r = await vscode.window.showInformationMessage(msg, copiar)
+      if (r === copiar) { await vscode.env.clipboard.writeText(manual) }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`No se pudo activar la automatización web: ${e.message}`)
     }
   })
 

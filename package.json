@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -79,6 +79,16 @@
           "type": "string",
           "default": "",
           "description": "Carpeta local que indexa el RAG de documentos (Word, PDF, Excel, HTML, texto). Se elige y se indexa desde el panel 'RAG de documentos' (icono de librería en el explorador de GenRocket)."
+        },
+        "genrocket.web.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Activa las 'manos' web: registra el Playwright MCP oficial (por npx, no se empaqueta) para operar el GenRocket Designer y hacer lo que la API REST no puede (crear escenario, ligar el receiver al dominio primario del escenario, armar chains). Actívalo con el comando 'GenRocket: Activar automatización web (Edge)'."
+        },
+        "genrocket.web.cdpEndpoint": {
+          "type": "string",
+          "default": "http://localhost:9222",
+          "description": "Endpoint CDP del Edge abierto con depuración remota (--remote-debugging-port=9222) y ya logueado en el Designer. El Playwright MCP se conecta ahí para reutilizar tu sesión (no se teclean credenciales)."
         },
         "genrocket.mcpScope": {
           "type": "string",
@@ -218,6 +228,10 @@
       {
         "command": "genrocket.connectSharePoint",
         "title": "GenRocket: Conectar SharePoint (Microsoft)"
+      },
+      {
+        "command": "genrocket.enableWebAutomation",
+        "title": "GenRocket: Activar automatización web (Edge)"
       },
       {
         "command": "genrocket.downloadScenario",
