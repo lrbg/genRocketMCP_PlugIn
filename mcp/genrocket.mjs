@@ -527,6 +527,31 @@ const RECEIVER_TYPES = [
 const RECEIVER_EXT = {
   DelimitedFileReceiver: 'csv', ExcelFileReceiver: 'xlsx', JSONFileReceiver: 'json', XMLFileReceiver: 'xml',
 }
+// Quita TODAS las extensiones conocidas del final (GenRocket agrega la suya, así que
+// el fileName debe ir sin extensión; si no, sale nombre.xlsx.xlsx).
+function stripKnownExt(s) {
+  let x = String(s || ''), prev
+  do { prev = x; x = x.replace(/\.(xlsx|xls|csv|json|xml|txt)$/i, '') } while (x !== prev)
+  return x
+}
+// Corrige el fileName de los receivers de un dominio que traen extensión (doble o
+// sencilla) en el parámetro: lo deja sin extensión. Devuelve los cambios aplicados.
+async function fixReceiverFileNames(domainId, onlyReceiver) {
+  const recs = await listDomainReceivers(domainId)
+  const changes = []
+  for (const r of recs) {
+    if (onlyReceiver && r.name !== onlyReceiver) { continue }
+    const params = r.receiverParameters || []
+    const fp = params.find(p => /file.*name/i.test(p.name || ''))
+    if (!fp || !fp.value) { continue }
+    const fixed = stripKnownExt(fp.value)
+    if (fixed !== fp.value) {
+      await setReceiverParameter(domainId, r.name, fp.name, fixed)
+      changes.push(`${r.name}: ${fp.name} "${fp.value}" -> "${fixed}"`)
+    }
+  }
+  return changes
+}
 
 // Sello de tiempo ddmmyyhhmmss (local) para nombrar receivers de forma única.
 function ddmmyyhhmmss(d = new Date()) {
@@ -1238,9 +1263,8 @@ export function registerGenRocketTools(server) {
         const realType = RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType
         const ext = RECEIVER_EXT[realType] || 'txt'
         // fileName SIN extensión: GenRocket le agrega la extensión del receiver por su
-        // cuenta. Si mandáramos "nombre.xlsx" saldría "nombre.xlsx.xlsx". Quitamos
-        // cualquier extensión conocida al final del nombre para no duplicarla.
-        const fileBase = name.replace(/\.(xlsx|xls|csv|json|xml|txt)$/i, '')
+        // cuenta. Si mandáramos "nombre.xlsx" saldría "nombre.xlsx.xlsx".
+        const fileBase = stripKnownExt(name)
         // fileName por defecto (best-effort: si el nombre del parámetro difiere en el
         // tenant, no rompemos el alta del receiver).
         let fnNote = `\nfileName = ${fileBase} (GenRocket agrega .${ext})`
@@ -1258,6 +1282,19 @@ export function registerGenRocketTools(server) {
     async ({ domainId, receiverName, parameterName, parameterValue }) => {
       try { await setReceiverParameter(domainId, receiverName, parameterName, parameterValue); return ok(`Parametro "${parameterName}"="${parameterValue}" seteado en el receiver "${receiverName}".`) }
       catch (e) { return bad(`set_receiver_parameter: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_fix_receiver_filenames',
+    'CORRIGE el nombre de archivo de los receivers de un dominio que quedaron con la extensión repetida (ej. Agente.xlsx.xlsx): les deja el fileName SIN extensión (GenRocket agrega una sola al generar). Úsalo si ya tienes receivers con doble extensión. Sin receiverName corrige todos los del dominio.',
+    { domainId: z.string(), receiverName: z.string().optional().describe('Solo este receiver (vacío = todos los del dominio)') },
+    async ({ domainId, receiverName }) => {
+      try {
+        const changes = await fixReceiverFileNames(domainId, receiverName)
+        if (!changes.length) { return ok('Nada que corregir: ningún fileName traía extensión (o no hay receivers).') }
+        return ok(`Corregido:\n${changes.map(c => '- ' + c).join('\n')}\n\nVuelve a correr el escenario; ahora el archivo saldrá con una sola extensión.`)
+      } catch (e) { return bad(`fix_receiver_filenames: ${e.message}`) }
     }
   )
 
