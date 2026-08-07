@@ -203,6 +203,49 @@ export async function downloadScenario(scenarioId) {
   return { filename, bytes }
 }
 
+// Detalle de un escenario por REST (POST /scenario/show). Forma exacta según tenant.
+export async function showScenario(scenarioId) {
+  const data = await grPost('/scenario/show', { organizationId: requireOrg(), scenarioId })
+  return data?.scenario ?? data
+}
+
+// Descomprime un .grs (ZIP) a { rutaArchivo: contenidoTexto }.
+async function unzipGrs(bytes) {
+  const { createRequire } = await import('node:module')
+  const req = createRequire(import.meta.url)
+  const JSZip = req('jszip')
+  const zip = await JSZip.loadAsync(bytes)
+  const out = {}
+  for (const name of Object.keys(zip.files)) {
+    const f = zip.files[name]
+    if (f.dir) { continue }
+    try { out[name] = await f.async('string') } catch { out[name] = '' }
+  }
+  return out
+}
+
+// Compara dos escenarios descargando y diferenciando sus .grs. Devuelve archivos
+// solo-en-uno y, por cada archivo común distinto, las líneas que le FALTAN al
+// escenario del agente respecto al manual (y las de más), marcando las relevantes.
+async function compareScenarios(manualId, agentId) {
+  const [ma, ag] = await Promise.all([downloadScenario(manualId), downloadScenario(agentId)])
+  const fm = await unzipGrs(ma.bytes)
+  const fa = await unzipGrs(ag.bytes)
+  const namesM = Object.keys(fm), namesA = Object.keys(fa)
+  const onlyManual = namesM.filter(n => !(n in fa))
+  const onlyAgent = namesA.filter(n => !(n in fm))
+  const differing = namesM.filter(n => n in fa && fm[n] !== fa[n])
+  const KEY = /primary|receiver|domain|loopCount|scenarioDomain|isPrimary/i
+  const diffs = differing.map(n => {
+    const lm = fm[n].split(/\r?\n/), la = fa[n].split(/\r?\n/)
+    const setA = new Set(la.map(s => s.trim())), setM = new Set(lm.map(s => s.trim()))
+    const missingInAgent = lm.filter(s => s.trim() && !setA.has(s.trim()))
+    const extraInAgent = la.filter(s => s.trim() && !setM.has(s.trim()))
+    return { file: n, missingInAgent, extraInAgent }
+  })
+  return { ma, ag, onlyManual, onlyAgent, diffs, KEY }
+}
+
 // ── GenRocket Runtime (engine local) ─────────────────────────────
 export async function runtimeStatus() {
   let java = null
@@ -808,6 +851,50 @@ export function registerGenRocketTools(server) {
         const id = res?.scenario?.externalId || res?.externalId || ''
         return ok(`Escenario "${name}" creado en "${projectName}" v${versionNumber}${domainName ? ` (dominio ${domainName})` : ''}.${id ? ` externalId: ${id}` : ''}`)
       } catch (e) { return bad(`create_scenario: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_show_scenario',
+    'Muestra el detalle de un escenario por REST (POST /scenario/show): sus scenario-domains, cuál es el primario y los receivers ligados. Útil para comparar un escenario que SÍ funciona (creado a mano) contra uno creado por el agente.',
+    { scenarioId: z.string().describe('externalId del escenario (de genrocket_list_scenarios)') },
+    async ({ scenarioId }) => {
+      try { const s = await showScenario(scenarioId); return ok(JSON.stringify(s, null, 2)) }
+      catch (e) { return bad(`show_scenario: ${e.message}`) }
+    }
+  )
+
+  server.tool(
+    'genrocket_compare_scenarios',
+    'DIAGNÓSTICO: compara dos escenarios descargando y diferenciando sus .grs. Úsalo para encontrar por qué el escenario del AGENTE no funciona y el MANUAL sí: pasa manualScenarioId (el que TÚ creaste en el Designer y sí corre) y agentScenarioId (el creado por el agente). Reporta archivos que le faltan al del agente y las líneas distintas, marcando las de primary/receiver/domain (la causa típica).',
+    {
+      manualScenarioId: z.string().describe('externalId del escenario creado MANUALMENTE (referencia buena)'),
+      agentScenarioId: z.string().describe('externalId del escenario creado por el AGENTE (el que falla)'),
+    },
+    async ({ manualScenarioId, agentScenarioId }) => {
+      try {
+        const r = await compareScenarios(manualScenarioId, agentScenarioId)
+        const out = []
+        out.push(`Comparando MANUAL (${r.ma.filename}) vs AGENTE (${r.ag.filename}).`)
+        if (r.onlyManual.length) { out.push(`\nArchivos SOLO en el manual (le faltan al del agente):\n${r.onlyManual.map(f => '  - ' + f).join('\n')}`) }
+        if (r.onlyAgent.length) { out.push(`\nArchivos SOLO en el del agente:\n${r.onlyAgent.map(f => '  - ' + f).join('\n')}`) }
+        for (const d of r.diffs) {
+          const miss = d.missingInAgent.slice(0, 40)
+          const extra = d.extraInAgent.slice(0, 40)
+          out.push(`\n--- ${d.file} ---`)
+          if (miss.length) {
+            out.push(`Le FALTA al agente (está en el manual):`)
+            out.push(miss.map(l => (r.KEY.test(l) ? '  >> ' : '     ') + l.trim()).join('\n'))
+          }
+          if (extra.length) {
+            out.push(`De MÁS en el agente:`)
+            out.push(extra.map(l => (r.KEY.test(l) ? '  >> ' : '     ') + l.trim()).join('\n'))
+          }
+        }
+        if (!r.onlyManual.length && !r.onlyAgent.length && !r.diffs.length) { out.push('\nNo hay diferencias en los .grs (revisa a nivel dominio/receiver con genrocket_show_scenario).') }
+        out.push('\nLas líneas marcadas con ">>" (primary/receiver/domain) son la causa más probable.')
+        return ok(out.join('\n'))
+      } catch (e) { return bad(`compare_scenarios: ${e.message}`) }
     }
   )
 

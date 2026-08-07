@@ -159,6 +159,10 @@ export function activate(context: vscode.ExtensionContext) {
       await gc.update('web.enabled', true, vscode.ConfigurationTarget.Global)
       await vscode.commands.executeCommand('genrocket.registerMcpServer', { silent: true })
       mcpProvider?.refresh()
+      // Además del provider nativo, escribe el server de Playwright en el mcp.json
+      // (muchos usuarios usan el mcp.json manual y ahí no aparecía el compañero).
+      const cdp = gc.get<string>('web.cdpEndpoint') || 'http://localhost:9222'
+      await writePlaywrightServer(context, mode, cdp)
 
       if (mode === 'cdp') {
         // Alternativa por puerto de depuración: se lanza Edge con el PERFIL POR DEFECTO
@@ -385,6 +389,37 @@ async function writeMcpEntry(file: vscode.Uri, entry: McpServerEntry): Promise<v
   const merged = mergeMcpServers(await readTextIfExists(file), 'genrocket', entry)
   await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(file, '..'))
   await vscode.workspace.fs.writeFile(file, Buffer.from(merged, 'utf8'))
+}
+
+/** Escribe un servidor MCP con nombre arbitrario (para el compañero de Playwright). */
+async function writeMcpNamed(file: vscode.Uri, name: string, entry: McpServerEntry): Promise<void> {
+  const merged = mergeMcpServers(await readTextIfExists(file), name, entry)
+  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(file, '..'))
+  await vscode.workspace.fs.writeFile(file, Buffer.from(merged, 'utf8'))
+}
+
+/**
+ * Registra (o refresca) el servidor compañero de Playwright en el/los mcp.json donde
+ * ya está genrocket, además del provider nativo. Así aparece aunque el usuario use el
+ * mcp.json manual. Devuelve true si escribió en algún archivo.
+ */
+async function writePlaywrightServer(context: vscode.ExtensionContext, mode: string, cdpEndpoint: string): Promise<boolean> {
+  const args = mode === 'cdp'
+    ? ['-y', '@playwright/mcp@latest', '--cdp-endpoint', cdpEndpoint]
+    : ['-y', '@playwright/mcp@latest', '--extension', '--browser', 'msedge']
+  const entry: McpServerEntry = { command: 'npx', args }
+  const ws = vscode.workspace.workspaceFolders?.[0]
+  const wsFile = ws ? vscode.Uri.joinPath(ws.uri, '.vscode', 'mcp.json') : undefined
+  const userFile = vscode.Uri.file(userMcpPathFromGlobalStorage(context.globalStorageUri.fsPath))
+  let wrote = false
+  // Escribe donde ya vive genrocket; si no hay ninguno, cae al archivo de usuario.
+  const targets: vscode.Uri[] = []
+  for (const f of [userFile, wsFile]) { if (f && await mcpFileHasGenrocket(f)) { targets.push(f) } }
+  if (!targets.length) { targets.push(userFile) }
+  for (const f of targets) {
+    try { await writeMcpNamed(f, 'playwright-genrocket', entry); wrote = true } catch { /* se avisa en el mensaje */ }
+  }
+  return wrote
 }
 
 export function deactivate() {}

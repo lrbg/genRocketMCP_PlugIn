@@ -87,6 +87,11 @@ conocidos y te dice qué herramienta usar en cada caso.
 - **500 al asignar generador** → el atributo ya tenía generador; usa la tool que
   reemplaza (`genrocket_assign_generator`), que borra antes.
 - **Necesitas una chain y no existe** → créala en el Designer web; no hay API.
+- **El escenario creado por el AGENTE no corre pero el MANUAL sí** → usa
+  `genrocket_compare_scenarios(manualScenarioId, agentScenarioId)`: descarga ambos .grs
+  y muestra qué le falta al del agente (líneas marcadas `>>` de primary/receiver/domain
+  son la causa). Típico: el create por REST no marca el dominio como primary ni liga el
+  receiver → hay que hacerlo por la web (manos Playwright).
 
 ## Manos web (Playwright) — para lo que la API REST NO puede
 
@@ -95,6 +100,12 @@ automatización web"), tienes herramientas de navegador (browser_navigate, brows
 browser_click, browser_type, etc.) que se adjuntan al **Edge que el usuario YA tiene abierto
 y logueado** en el Designer (`app.genrocket.com`). Úsalas SOLO para lo que REST no permite.
 Reglas de oro:
+- **Usa las herramientas del servidor "Playwright (GenRocket web)"** (se llaman `browser_navigate`,
+  `browser_snapshot`, `browser_click`, `browser_type`, …). **NO uses** las herramientas de navegador
+  genéricas del editor (`open_browser_page`, `navigate_page`, `read_page`, `screenshot_page`,
+  `click_element`, etc.): esas abren un navegador NUEVO/limpio que la política de dispositivo bloquea.
+  Si SOLO ves esas genéricas y no las `browser_*`, el servidor Playwright no está activo: dile al
+  usuario que ejecute "GenRocket: Activar automatización web" y reinicie los MCP. No sigas con las genéricas.
 - **NO abras una ventana/pestaña nueva ni un contexto limpio**: usa la pestaña ya abierta del
   Designer. Una sesión nueva es bloqueada por la política de dispositivo de la empresa
   ("You can't get there from here… only from domain joined devices"); solo la sesión ya
