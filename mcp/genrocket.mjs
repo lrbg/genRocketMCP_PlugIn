@@ -1013,6 +1013,36 @@ export function registerGenRocketTools(server) {
   )
 
   server.tool(
+    'genrocket_generator_parameters',
+    'Muestra los generadores ASIGNADOS a un atributo con sus PARÁMETROS reales (nombre y valor actual) tal como los expone GenRocket (POST /generator/list por dominio). Úsalo para saber los nombres EXACTOS de parámetros válidos ANTES de cambiarlos con genrocket_set_generator_parameter — así evitas el "Invalid parameter name"/500 por adivinar. Requiere que el atributo ya tenga el generador asignado.',
+    { domainId: z.string(), attributeName: z.string().describe('Nombre del atributo (se normaliza como en GenRocket)') },
+    async ({ domainId, attributeName }) => {
+      try {
+        const real = grNorm(attributeName)
+        const gens = await listGeneratorsOf(domainId, real)
+        if (!gens.length) return ok(`El atributo "${real}" no tiene generadores asignados (o el dominio/atributo no existe). Asígnale uno con genrocket_assign_generator.`)
+        const lines = gens.map((g, i) => {
+          const gname = g.generatorType || g.generator || g.name || `gen${i + 1}`
+          const pos = g.genName || g.name || `gen${i + 1}`
+          // El objeto de parámetros varía según versión; probamos las formas conocidas.
+          const params = Array.isArray(g.parameters) ? g.parameters
+            : (Array.isArray(g.generatorParameters) ? g.generatorParameters
+              : (Array.isArray(g.params) ? g.params : []))
+          const pl = params.length
+            ? params.map(p => {
+              const pn = p.name ?? p.parameterName ?? p.key ?? '?'
+              const pv = p.value ?? p.parameterValue ?? p.defaultValue ?? ''
+              return `    - ${pn} = ${pv === '' ? '(vacío)' : pv}`
+            }).join('\n')
+            : '    (la API no expuso parámetros para este generador)'
+          return `- ${gname}  [posición: ${pos}]\n${pl}`
+        }).join('\n')
+        return ok(`Generadores y parámetros de "${real}":\n${lines}\n\nPara cambiar uno: genrocket_set_generator_parameter(domainId, attributeName="${real}", genName=<posición>, parameterName=<nombre EXACTO de arriba>, parameterValue=...).`)
+      } catch (e) { return bad(`generator_parameters: ${e.message}`) }
+    }
+  )
+
+  server.tool(
     'genrocket_delete_generators',
     'Quita TODOS los generadores de un atributo (POST /generator/deleteAll). Util antes de asignar uno nuevo.',
     { domainId: z.string(), attributeName: z.string() },

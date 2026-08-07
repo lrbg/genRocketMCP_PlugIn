@@ -253,7 +253,7 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **GenRocket — vista previa (genera muestra por REST, sin Runtime):** `genrocket_preview_domain`, `genrocket_preview_attribute`.
 
-**GenRocket — autoría y generadores:** crear dominio/atributos, **asignar un generador a un atributo** (`genrocket_assign_generator`: valida el nombre contra el catálogo real y sugiere parecidos; reemplaza el generador actual y acepta parámetros), agregar y parametrizar generadores, sugerir generador por nombre de atributo, ver el catálogo (`genrocket_available_generators`), listar/crear receivers.
+**GenRocket — autoría y generadores:** crear dominio/atributos, **asignar un generador a un atributo** (`genrocket_assign_generator`: valida el nombre contra el catálogo real y sugiere parecidos; reemplaza el generador actual y acepta parámetros), agregar y parametrizar generadores, sugerir generador por nombre de atributo, ver el catálogo (`genrocket_available_generators`), listar/crear receivers. **Para saber los nombres EXACTOS de parámetros de un generador** (y no adivinar): `genrocket_generator_parameters` lista los generadores asignados a un atributo con sus parámetros reales y sus valores, tal como los expone GenRocket — úsalo antes de `genrocket_set_generator_parameter`.
 
 **GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`).
 
