@@ -3,8 +3,21 @@ src/**
 **/*.ts
 **/tsconfig.json
 .gitignore
-node_modules/**/*.map
+**/*.map
 test/**
 .agents/**
 .claude/**
 scratchpad/**
+*.vsix
+skills-lock.json
+mcp/db/DbQuery.java
+
+# Basura de node_modules del MCP (no se usa en runtime). Scoped a node_modules
+# para NO tocar el README ni mcp/context/genrocket-context.md.
+mcp/node_modules/**/test/**
+mcp/node_modules/**/tests/**
+mcp/node_modules/**/*.md
+mcp/node_modules/**/*.markdown
+mcp/node_modules/@types/**
+mcp/node_modules/@modelcontextprotocol/sdk/dist/**/examples/**
+mcp/node_modules/pdf-parse/test/**
