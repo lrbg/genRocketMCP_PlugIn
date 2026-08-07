@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.45",
+  "version": "0.1.46",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -85,10 +85,23 @@
           "default": false,
           "description": "Activa las 'manos' web: registra el Playwright MCP oficial (por npx, no se empaqueta) para operar el GenRocket Designer y hacer lo que la API REST no puede (crear escenario, ligar el receiver al dominio primario del escenario, armar chains). Actívalo con el comando 'GenRocket: Activar automatización web (Edge)'."
         },
+        "genrocket.web.mode": {
+          "type": "string",
+          "enum": [
+            "extension",
+            "cdp"
+          ],
+          "enumDescriptions": [
+            "Adjuntarse a tu Edge YA ABIERTO y logueado mediante la extensión puente de Playwright (recomendado: no abre ventana nueva, no re-loguea, así pasa el Conditional Access de la empresa).",
+            "Conectarse por CDP a un Edge lanzado con --remote-debugging-port (perfil por defecto). Requiere cerrar Edge y que la política permita depuración remota."
+          ],
+          "default": "extension",
+          "description": "Cómo conecta el agente con tu navegador para operar el Designer. 'extension' reutiliza tu sesión ya iniciada (evita el bloqueo por dispositivo). 'cdp' es la alternativa por puerto de depuración."
+        },
         "genrocket.web.cdpEndpoint": {
           "type": "string",
           "default": "http://localhost:9222",
-          "description": "Endpoint CDP del Edge abierto con depuración remota (--remote-debugging-port=9222) y ya logueado en el Designer. El Playwright MCP se conecta ahí para reutilizar tu sesión (no se teclean credenciales)."
+          "description": "Solo para modo 'cdp': endpoint del Edge abierto con --remote-debugging-port=9222 y ya logueado. El Playwright MCP se conecta ahí para reutilizar tu sesión (no se teclean credenciales)."
         },
         "genrocket.mcpScope": {
           "type": "string",

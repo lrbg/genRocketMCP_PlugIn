@@ -92,10 +92,16 @@ conocidos y te dice qué herramienta usar en cada caso.
 
 Si está activo el servidor **Playwright (GenRocket web)** (comando "GenRocket: Activar
 automatización web"), tienes herramientas de navegador (browser_navigate, browser_snapshot,
-browser_click, browser_type, etc.) conectadas por CDP al **Edge ya logueado** en el Designer
-(`app.genrocket.com`). Úsalas SOLO para lo que REST no permite. Reglas de oro:
+browser_click, browser_type, etc.) que se adjuntan al **Edge que el usuario YA tiene abierto
+y logueado** en el Designer (`app.genrocket.com`). Úsalas SOLO para lo que REST no permite.
+Reglas de oro:
+- **NO abras una ventana/pestaña nueva ni un contexto limpio**: usa la pestaña ya abierta del
+  Designer. Una sesión nueva es bloqueada por la política de dispositivo de la empresa
+  ("You can't get there from here… only from domain joined devices"); solo la sesión ya
+  autenticada del usuario pasa. Si te aparece un login de Microsoft, NO intentes iniciar
+  sesión (no manejes credenciales corporativas): significa que no estás en la pestaña
+  correcta — usa la que el usuario ya tiene abierta o pídele que la enfoque.
 - **Lee la página antes de actuar** (browser_snapshot) y haz clic por lo que ves; no asumas selectores.
-- No inicies sesión tú: el usuario ya está logueado. Si ves login, pídeselo.
 - Confirma con el usuario antes de guardar/crear algo irreversible.
 
 Flujos del Designer:

@@ -150,8 +150,14 @@ export class GenrocketMcpProvider {
     // (crear escenario, ligar el receiver al dominio primario del escenario, armar chains).
     const c = vscode.workspace.getConfiguration('genrocket')
     if (c.get<boolean>('web.enabled')) {
-      const cdp = c.get<string>('web.cdpEndpoint') || 'http://localhost:9222'
-      const pw = new Stdio('Playwright (GenRocket web)', 'npx', ['-y', '@playwright/mcp@latest', '--cdp-endpoint', cdp], {}, '1.0.0')
+      const mode = c.get<string>('web.mode') || 'extension'
+      // 'extension': se adjunta al Edge YA ABIERTO y logueado del usuario (pasa el
+      // Conditional Access de la empresa; no abre ventana nueva, no re-loguea).
+      // 'cdp': se conecta por puerto de depuración a un Edge lanzado aparte.
+      const args = mode === 'cdp'
+        ? ['-y', '@playwright/mcp@latest', '--cdp-endpoint', c.get<string>('web.cdpEndpoint') || 'http://localhost:9222']
+        : ['-y', '@playwright/mcp@latest', '--extension', '--browser', 'msedge']
+      const pw = new Stdio('Playwright (GenRocket web)', 'npx', args, {}, '1.0.0')
       defs.push(pw)
     }
     return defs
