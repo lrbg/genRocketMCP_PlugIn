@@ -87,6 +87,12 @@ conocidos y te dice qué herramienta usar en cada caso.
 - **500 al asignar generador** → el atributo ya tenía generador; usa la tool que
   reemplaza (`genrocket_assign_generator`), que borra antes.
 - **Necesitas una chain y no existe** → créala en el Designer web; no hay API.
+- **Genera pocos/1 registro (o quieres N filas)** → es el `loopCount` del dominio.
+  NO necesitas el Designer: al correr pasa `records` + `domain` (o `loops`) a
+  `genrocket_run_scenario`/`genrocket_run_chain`; el plugin escribe un archivo `-apif`
+  con `domainSetLoopCount` y overridea el conteo en tiempo de corrida. Ej.: para 50
+  agentes, records=50 domain=Agente. Si el dominio primario depende de otro (parent),
+  sube también el conteo del padre con `loops` (ej. { "Agente": 50, "Asegurado": 50 }).
 - **El escenario creado por el AGENTE no corre pero el MANUAL sí** → el .grs viene
   CIFRADO, así que NO lo diagnostiques por diff de archivo. Corre `genrocket_show_scenario`
   en AMBOS y compara la ESTRUCTURA. Revisa, en este orden: (1) el dominio primario está

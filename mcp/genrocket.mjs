@@ -384,8 +384,18 @@ export async function downloadChain(chainId) {
   return { filename, bytes }
 }
 
+// Construye el archivo -apif (JSON de métodos) para overridear el loopCount de
+// dominios en tiempo de corrida, SIN Designer. loops = { domainName: count }.
+function apifContent(loops) {
+  const api = Object.entries(loops || {})
+    .filter(([d, c]) => d && Number(c) > 0)
+    .map(([domainName, loopCount]) => ({ methodName: 'domainSetLoopCount', parameters: { domainName, loopCount: String(loopCount) } }))
+  return api.length ? JSON.stringify({ api }, null, 2) : null
+}
+
 // Ejecuta un .grs (escenario o chain) con el Runtime local y recolecta los archivos generados.
-async function runGrs(filename, bytes, label, fallbackId) {
+// loops (opcional): { domainName: count } → cambia el número de registros vía -apif.
+async function runGrs(filename, bytes, label, fallbackId, loops) {
   if (!RUNTIME_CMD) {
     throw new Error('GenRocket Runtime no configurado. Define GENROCKET_RUNTIME_CMD con el comando de tu Runtime (usa {grs} y {dir}), p. ej: java -jar /ruta/GenRocketRuntime.jar {grs}')
   }
@@ -394,7 +404,14 @@ async function runGrs(filename, bytes, label, fallbackId) {
   await mkdir(dir, { recursive: true })
   const grsPath = join(dir, filename.endsWith('.grs') ? filename : `${fallbackId}.grs`)
   await writeFile(grsPath, bytes)
-  const cmd = RUNTIME_CMD.replaceAll('{grs}', `"${grsPath}"`).replaceAll('{dir}', `"${dir}"`)
+  let cmd = RUNTIME_CMD.replaceAll('{grs}', `"${grsPath}"`).replaceAll('{dir}', `"${dir}"`)
+  // Override de número de registros (loopCount) vía -apif, sin tocar el Designer.
+  const apifJson = apifContent(loops)
+  if (apifJson) {
+    const apifPath = join(dir, 'genrocket-apif.json')
+    await writeFile(apifPath, apifJson)
+    cmd = cmd.includes('{apif}') ? cmd.replaceAll('{apif}', `"${apifPath}"`) : `${cmd} -apif "${apifPath}"`
+  }
   let stdout = '', stderr = '', exitCode = 0
   try {
     const r = await execAsync(cmd, { cwd: dir, timeout: 10 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 })
@@ -412,40 +429,16 @@ async function runGrs(filename, bytes, label, fallbackId) {
   return { dir, grs: grsPath, exitCode, stdout: stdout.slice(-3000), stderr: stderr.slice(-3000), outputs }
 }
 
-export async function runChain(chainId, { chainName } = {}) {
+export async function runChain(chainId, { chainName, loops } = {}) {
   const { filename, bytes } = await downloadChain(chainId)
-  return runGrs(filename, bytes, chainName ? `chain-${chainName}` : `chain-${chainId}`, chainId)
+  return runGrs(filename, bytes, chainName ? `chain-${chainName}` : `chain-${chainId}`, chainId, loops)
 }
 
 // Descarga el .grs y ejecuta el Runtime local (GENROCKET_RUNTIME_CMD) para generar datos.
-export async function runScenario(scenarioId, { scenarioName } = {}) {
-  if (!RUNTIME_CMD) {
-    throw new Error('GenRocket Runtime no configurado. Define GENROCKET_RUNTIME_CMD con el comando de tu Runtime (usa {grs} y {dir}), p. ej: java -jar /ruta/GenRocketRuntime.jar {grs}')
-  }
+// loops (opcional): { domainName: count } → override del número de registros vía -apif.
+export async function runScenario(scenarioId, { scenarioName, loops } = {}) {
   const { filename, bytes } = await downloadScenario(scenarioId)
-  const safe = (scenarioName || scenarioId).replace(/[^\w.-]/g, '_')
-  const dir = join(RUNTIME_OUTDIR, `${safe}-${Date.now()}`)
-  await mkdir(dir, { recursive: true })
-  const grsPath = join(dir, filename.endsWith('.grs') ? filename : `${scenarioId}.grs`)
-  await writeFile(grsPath, bytes)
-
-  const cmd = RUNTIME_CMD.replaceAll('{grs}', `"${grsPath}"`).replaceAll('{dir}', `"${dir}"`)
-  let stdout = '', stderr = '', exitCode = 0
-  try {
-    const r = await execAsync(cmd, { cwd: dir, timeout: 5 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 })
-    stdout = r.stdout; stderr = r.stderr
-  } catch (e) {
-    exitCode = e.code ?? 1; stdout = e.stdout || ''; stderr = e.stderr || e.message
-  }
-
-  const outputs = []
-  for (const f of await readdir(dir)) {
-    const full = join(dir, f)
-    if (full === grsPath) continue
-    const st = await stat(full).catch(() => null)
-    if (st?.isFile()) outputs.push({ name: f, bytes: st.size })
-  }
-  return { dir, grs: grsPath, exitCode, stdout: stdout.slice(-3000), stderr: stderr.slice(-3000), outputs }
+  return runGrs(filename, bytes, scenarioName || scenarioId, scenarioId, loops)
 }
 
 // ── Escritura (endpoints confirmados; el payload exacto lo define la API de GenRocket) ──
@@ -787,6 +780,14 @@ function fmtRuntimeRun(titulo, r, emptyMsg) {
   ].filter(Boolean).join('\n')
 }
 
+// Arma el mapa { dominio: conteo } para el override de registros, aceptando
+// `loops` (objeto) o el atajo `records`+`domain`.
+function loopsFrom({ loops, records, domain }) {
+  const out = { ...(loops || {}) }
+  if (records != null && domain) { out[domain] = records }
+  return Object.keys(out).length ? out : undefined
+}
+
 // ── Registro de tools en el server MCP existente ─────────────────
 export function registerGenRocketTools(server) {
   server.tool(
@@ -1103,11 +1104,17 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_run_chain',
-    'Ejecuta una CHAIN completa con el Runtime local: descarga su .grs y corre todos sus escenarios, generando datos. Requiere el Runtime instalado (GENROCKET_RUNTIME_CMD).',
-    { chainId: z.string().describe('externalId de la chain (de genrocket_list_chains)'), chainName: z.string().optional() },
-    async ({ chainId, chainName }) => {
+    'Ejecuta una CHAIN completa con el Runtime local: descarga su .grs y corre todos sus escenarios, generando datos. Requiere el Runtime instalado (GENROCKET_RUNTIME_CMD). Para el NUMERO DE REGISTROS pasa records+domain o loops (override de loopCount vía -apif, sin Designer).',
+    {
+      chainId: z.string().describe('externalId de la chain (de genrocket_list_chains)'),
+      chainName: z.string().optional(),
+      records: z.number().int().positive().optional().describe('Registros a generar (requiere "domain").'),
+      domain: z.string().optional().describe('Dominio para "records".'),
+      loops: z.record(z.number().int().positive()).optional().describe('Override por dominio: { "Agente": 50 }.'),
+    },
+    async ({ chainId, chainName, records, domain, loops }) => {
       try {
-        const r = await runChain(chainId, { chainName })
+        const r = await runChain(chainId, { chainName, loops: loopsFrom({ loops, records, domain }) })
         return ok(fmtRuntimeRun('Chain ejecutada', r, '(sin archivos; revisa los receivers de los escenarios de la chain)'))
       } catch (e) { return bad(`run_chain: ${e.message}`) }
     }
@@ -1139,14 +1146,17 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_run_scenario',
-    'Ejecuta el GenRocket Runtime LOCAL sobre un escenario para GENERAR los datos sinteticos (CSV/archivos segun los receivers del escenario). Descarga el .grs y corre el comando GENROCKET_RUNTIME_CMD. Devuelve los archivos generados y su ruta. Requiere el Runtime instalado y configurado.',
+    'Ejecuta el GenRocket Runtime LOCAL sobre un escenario para GENERAR los datos sinteticos (CSV/archivos segun los receivers del escenario). Descarga el .grs y corre el comando GENROCKET_RUNTIME_CMD. Devuelve los archivos generados y su ruta. Requiere el Runtime instalado y configurado. Para controlar el NUMERO DE REGISTROS sin tocar el Designer, pasa records + domain (o loops), que overridea el loopCount del dominio vía -apif.',
     {
       scenarioId: z.string().describe('externalId del escenario (de genrocket_list_scenarios)'),
       scenarioName: z.string().optional().describe('Nombre del escenario (opcional, para nombrar la carpeta)'),
+      records: z.number().int().positive().optional().describe('Número de registros a generar (override de loopCount). Requiere "domain".'),
+      domain: z.string().optional().describe('Dominio al que aplicar "records" (ej. el dominio primario, "Agente").'),
+      loops: z.record(z.number().int().positive()).optional().describe('Override por dominio: { "Agente": 50, "Asegurado": 50 }. Alternativa a records+domain.'),
     },
-    async ({ scenarioId, scenarioName }) => {
+    async ({ scenarioId, scenarioName, records, domain, loops }) => {
       try {
-        const r = await runScenario(scenarioId, { scenarioName })
+        const r = await runScenario(scenarioId, { scenarioName, loops: loopsFrom({ loops, records, domain }) })
         return ok(fmtRuntimeRun('Runtime ejecutado', r, '(no se generaron archivos nuevos; revisa los receivers configurados en el escenario)'))
       } catch (e) {
         return bad(`No se pudo ejecutar el Runtime: ${e.message}`)
