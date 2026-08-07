@@ -1236,11 +1236,15 @@ export function registerGenRocketTools(server) {
         const name = receiverName || await defaultReceiverName(domainId)
         await addDomainReceiver(domainId, receiverType, name)
         const realType = RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType
-        const fileName = `${name}.${RECEIVER_EXT[realType] || 'txt'}`
+        const ext = RECEIVER_EXT[realType] || 'txt'
+        // fileName SIN extensión: GenRocket le agrega la extensión del receiver por su
+        // cuenta. Si mandáramos "nombre.xlsx" saldría "nombre.xlsx.xlsx". Quitamos
+        // cualquier extensión conocida al final del nombre para no duplicarla.
+        const fileBase = name.replace(/\.(xlsx|xls|csv|json|xml|txt)$/i, '')
         // fileName por defecto (best-effort: si el nombre del parámetro difiere en el
         // tenant, no rompemos el alta del receiver).
-        let fnNote = `\nfileName = ${fileName}`
-        try { await setReceiverParameter(domainId, name, 'fileName', fileName) }
+        let fnNote = `\nfileName = ${fileBase} (GenRocket agrega .${ext})`
+        try { await setReceiverParameter(domainId, name, 'fileName', fileBase) }
         catch (e) { fnNote = `\n(no pude fijar fileName automáticamente: ${e.message}. Configúralo con genrocket_set_receiver_parameter.)` }
         return ok(`Receiver "${name}" (${realType}) agregado al dominio.${fnNote}`)
       } catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
