@@ -74,6 +74,11 @@ conocidos y te dice qué herramienta usar en cada caso.
   su carpeta) y corre `genrocket_runtime_doctor`. El error real ya se propaga.
 - **Chain/escenario falla (exit ≠ 0, 0 archivos)** → lee `stderr` de la tool; corre
   `genrocket_runtime_doctor` (licencia / POI / Java).
+- **Corre bien (exit 0) pero genera 0 archivos** → al escenario le falta un RECEIVER
+  en su dominio primario (el Designer avisa: "This Scenario does not have any Receivers
+  assigned to its primary Scenario Domains. Running this Scenario will produce no
+  output."). Agrégalo con `genrocket_add_domain_receiver` (+ `genrocket_set_receiver_parameter`
+  para outputPath/fileName). En una chain, CADA escenario necesita su receiver.
 - **"Invalid parameter name" al setear un generador** → `genrocket_generator_parameters`
   para ver los nombres válidos.
 - **"Invalid Generator Name"** → `genrocket_available_generators` / `genrocket_suggest_generators`.
