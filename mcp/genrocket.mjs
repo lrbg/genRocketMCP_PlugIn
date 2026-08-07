@@ -209,7 +209,7 @@ export async function showScenario(scenarioId) {
   return data?.scenario ?? data
 }
 
-// Descomprime un .grs (ZIP) a { rutaArchivo: contenidoTexto }.
+// Descomprime un .grs (ZIP) a { rutaArchivo: Uint8Array }.
 async function unzipGrs(bytes) {
   const { createRequire } = await import('node:module')
   const req = createRequire(import.meta.url)
@@ -219,31 +219,39 @@ async function unzipGrs(bytes) {
   for (const name of Object.keys(zip.files)) {
     const f = zip.files[name]
     if (f.dir) { continue }
-    try { out[name] = await f.async('string') } catch { out[name] = '' }
+    try { out[name] = await f.async('uint8array') } catch { out[name] = new Uint8Array() }
   }
   return out
 }
+const bytesEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i])
+// ¿Es texto legible? (los .xml del .grs vienen CIFRADOS: bytes no imprimibles).
+function isText(u8) {
+  const n = Math.min(u8.length, 500); if (!n) { return true }
+  let printable = 0
+  for (let i = 0; i < n; i++) { const c = u8[i]; if (c === 9 || c === 10 || c === 13 || (c >= 32 && c < 127)) { printable++ } }
+  return printable / n > 0.85
+}
+const asText = (u8) => new TextDecoder().decode(u8)
 
-// Compara dos escenarios descargando y diferenciando sus .grs. Devuelve archivos
-// solo-en-uno y, por cada archivo común distinto, las líneas que le FALTAN al
-// escenario del agente respecto al manual (y las de más), marcando las relevantes.
+// Compara dos escenarios descargando sus .grs. OJO: el XML del .grs está cifrado,
+// así que reporta qué archivos internos difieren (por tamaño/bytes) y muestra los
+// que sí son texto (checksum.txt). Para diferencias de ESTRUCTURA (primary/receiver)
+// hay que usar genrocket_show_scenario, que devuelve JSON sin cifrar.
 async function compareScenarios(manualId, agentId) {
   const [ma, ag] = await Promise.all([downloadScenario(manualId), downloadScenario(agentId)])
   const fm = await unzipGrs(ma.bytes)
   const fa = await unzipGrs(ag.bytes)
-  const namesM = Object.keys(fm), namesA = Object.keys(fa)
-  const onlyManual = namesM.filter(n => !(n in fa))
-  const onlyAgent = namesA.filter(n => !(n in fm))
-  const differing = namesM.filter(n => n in fa && fm[n] !== fa[n])
-  const KEY = /primary|receiver|domain|loopCount|scenarioDomain|isPrimary/i
-  const diffs = differing.map(n => {
-    const lm = fm[n].split(/\r?\n/), la = fa[n].split(/\r?\n/)
-    const setA = new Set(la.map(s => s.trim())), setM = new Set(lm.map(s => s.trim()))
-    const missingInAgent = lm.filter(s => s.trim() && !setA.has(s.trim()))
-    const extraInAgent = la.filter(s => s.trim() && !setM.has(s.trim()))
-    return { file: n, missingInAgent, extraInAgent }
+  const names = [...new Set([...Object.keys(fm), ...Object.keys(fa)])].sort()
+  const rows = names.map(n => {
+    const a = fm[n], b = fa[n]
+    if (!a) { return { file: n, state: 'solo en el AGENTE' } }
+    if (!b) { return { file: n, state: 'solo en el MANUAL' } }
+    const same = bytesEqual(a, b)
+    const text = isText(a) && isText(b)
+    return { file: n, state: same ? 'igual' : 'DISTINTO', sizeM: a.length, sizeA: b.length, text, a, b }
   })
-  return { ma, ag, onlyManual, onlyAgent, diffs, KEY }
+  const anyEncrypted = rows.some(r => r.a && !r.text)
+  return { ma, ag, rows, anyEncrypted, asText }
 }
 
 // ── GenRocket Runtime (engine local) ─────────────────────────────
@@ -866,7 +874,7 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_compare_scenarios',
-    'DIAGNÓSTICO: compara dos escenarios descargando y diferenciando sus .grs. Úsalo para encontrar por qué el escenario del AGENTE no funciona y el MANUAL sí: pasa manualScenarioId (el que TÚ creaste en el Designer y sí corre) y agentScenarioId (el creado por el agente). Reporta archivos que le faltan al del agente y las líneas distintas, marcando las de primary/receiver/domain (la causa típica).',
+    'Compara dos escenarios descargando sus .grs (manual vs agente). NOTA: el XML del .grs viene CIFRADO por GenRocket, así que esto reporta qué archivos internos difieren (tamaño/bytes) y muestra los de texto (checksum.txt). Para comparar la ESTRUCTURA (dominio primario, receivers) usa genrocket_show_scenario en ambos, que devuelve JSON sin cifrar.',
     {
       manualScenarioId: z.string().describe('externalId del escenario creado MANUALMENTE (referencia buena)'),
       agentScenarioId: z.string().describe('externalId del escenario creado por el AGENTE (el que falla)'),
@@ -874,25 +882,26 @@ export function registerGenRocketTools(server) {
     async ({ manualScenarioId, agentScenarioId }) => {
       try {
         const r = await compareScenarios(manualScenarioId, agentScenarioId)
-        const out = []
-        out.push(`Comparando MANUAL (${r.ma.filename}) vs AGENTE (${r.ag.filename}).`)
-        if (r.onlyManual.length) { out.push(`\nArchivos SOLO en el manual (le faltan al del agente):\n${r.onlyManual.map(f => '  - ' + f).join('\n')}`) }
-        if (r.onlyAgent.length) { out.push(`\nArchivos SOLO en el del agente:\n${r.onlyAgent.map(f => '  - ' + f).join('\n')}`) }
-        for (const d of r.diffs) {
-          const miss = d.missingInAgent.slice(0, 40)
-          const extra = d.extraInAgent.slice(0, 40)
-          out.push(`\n--- ${d.file} ---`)
-          if (miss.length) {
-            out.push(`Le FALTA al agente (está en el manual):`)
-            out.push(miss.map(l => (r.KEY.test(l) ? '  >> ' : '     ') + l.trim()).join('\n'))
-          }
-          if (extra.length) {
-            out.push(`De MÁS en el agente:`)
-            out.push(extra.map(l => (r.KEY.test(l) ? '  >> ' : '     ') + l.trim()).join('\n'))
+        const out = [`Comparando MANUAL (${r.ma.filename}) vs AGENTE (${r.ag.filename}):\n`]
+        for (const row of r.rows) {
+          if (row.state === 'igual' || row.state === 'DISTINTO') {
+            out.push(`- ${row.file}: ${row.state} (manual ${row.sizeM}B, agente ${row.sizeA}B${row.text ? '' : ', cifrado'})`)
+          } else {
+            out.push(`- ${row.file}: ${row.state}`)
           }
         }
-        if (!r.onlyManual.length && !r.onlyAgent.length && !r.diffs.length) { out.push('\nNo hay diferencias en los .grs (revisa a nivel dominio/receiver con genrocket_show_scenario).') }
-        out.push('\nLas líneas marcadas con ">>" (primary/receiver/domain) son la causa más probable.')
+        // Muestra el contenido de los archivos de TEXTO que difieren (p.ej. checksum.txt).
+        for (const row of r.rows) {
+          if (row.state === 'DISTINTO' && row.text) {
+            out.push(`\n--- ${row.file} (manual) ---\n${r.asText(row.a).trim()}`)
+            out.push(`\n--- ${row.file} (agente) ---\n${r.asText(row.b).trim()}`)
+          }
+        }
+        if (r.anyEncrypted) {
+          out.push('\nLos .xml del escenario están CIFRADOS: no se puede diferenciar su texto aquí.')
+          out.push('Si los tamaños coinciden, la estructura es casi igual (no falta un bloque entero).')
+          out.push('Para ver primary/receivers, corre genrocket_show_scenario en AMBOS y compara el JSON.')
+        }
         return ok(out.join('\n'))
       } catch (e) { return bad(`compare_scenarios: ${e.message}`) }
     }
