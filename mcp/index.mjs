@@ -22,7 +22,13 @@ import { registerDbExploreTools } from './db.mjs'
 let version = '0.0.0'
 try { version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version || version } catch { /* usa fallback */ }
 
-const server = new McpServer({ name: 'genrocket-mcp', version })
+const INSTRUCTIONS = [
+  'Este servidor expone GenRocket (datos sintéticos), un módulo de bases de datos de solo lectura, generación con el Runtime local y un RAG de documentos.',
+  'ANTES de diagnosticar un fallo o construir un flujo con GenRocket, llama a la tool `genrocket_context` para cargar el contexto (errores conocidos de la API, módulo de BD, Runtime y un playbook síntoma→herramienta).',
+  'Ante cualquier fallo del Runtime (licencia, Excel/POI) o de BD ("sin columnas"), usa `genrocket_runtime_doctor` para diagnosticar en un solo paso.',
+].join(' ')
+
+const server = new McpServer({ name: 'genrocket-mcp', version }, { instructions: INSTRUCTIONS })
 registerGenRocketTools(server)
 registerFakerTools(server)
 registerPublishTools(server)

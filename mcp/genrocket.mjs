@@ -15,9 +15,9 @@ import { z } from 'zod'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, readdir, stat } from 'node:fs/promises'
-import { readFileSync, existsSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, delimiter as pathDelimiter } from 'node:path'
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
+import { join, dirname, delimiter as pathDelimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const execAsync = promisify(exec)
@@ -196,6 +196,106 @@ export async function runtimeStatus() {
   let java = null
   try { const { stdout, stderr } = await execAsync('java -version'); java = (stderr || stdout).split('\n')[0].trim() } catch { java = null }
   return { java, runtimeConfigured: !!RUNTIME_CMD, runtimeCmd: RUNTIME_CMD || null, outDir: RUNTIME_OUTDIR }
+}
+
+// Deriva la carpeta raíz del Runtime desde GENROCKET_RUNTIME_CMD
+// (…/<home>/bin/genrocket.bat -r {grs}  →  <home>).
+function runtimeHomeFromCmd(cmd) {
+  if (!cmd) { return null }
+  const m = cmd.match(/["']?([^"'\s]*genrocket[^"'\s]*\.(?:bat|sh|jar))["']?/i)
+    || cmd.match(/["']([^"']+\.(?:bat|sh|jar))["']/i)
+    || cmd.match(/(\S+\.(?:bat|sh|jar))/i)
+  if (!m) { return null }
+  return dirname(dirname(m[1])) || null   // …/bin → …/<home>
+}
+
+// Diagnóstico integral del Runtime + BD: Java, comando del Runtime, jars POI/xmlbeans
+// duplicados en lib, perfil/certificado de licencia y driverJar de las conexiones.
+// Convierte horas de arqueología por terminal en una sola llamada.
+export async function runtimeDoctor() {
+  const checks = []
+  const add = (status, label, detail) => checks.push({ status, label, detail })
+
+  // 1) Java (PATH o GENROCKET_JAVA)
+  try {
+    const { stdout, stderr } = await execAsync(`"${JAVA_BIN}" -version`)
+    const line = (stderr || stdout).split('\n')[0].trim()
+    const mv = line.match(/version "?(\d+)(?:\.(\d+))?/)
+    const major = mv ? (mv[1] === '1' ? Number(mv[2]) : Number(mv[1])) : null
+    add('ok', `Java (${JAVA_BIN})`, `${line}${major ? ` — major ${major}` : ''}`)
+    if (major && major > 11) {
+      add('warn', 'Java para el Runtime', `El Runtime de GenRocket espera Java 8–11; detecté ${major}. Si el Runtime falla al validar la licencia, usa un Java 8–11 en el PATH (deja GENROCKET_JAVA solo para el helper de BD).`)
+    }
+  } catch (e) { add('fail', 'Java', `No se pudo ejecutar java: ${e.message}`) }
+
+  // 2) Runtime configurado + carpeta lib (POI/xmlbeans duplicados)
+  if (!RUNTIME_CMD) {
+    add('warn', 'Runtime', 'GENROCKET_RUNTIME_CMD no configurado: no podrás generar datos ni correr chains.')
+  } else {
+    add('ok', 'Runtime configurado', RUNTIME_CMD)
+    const home = runtimeHomeFromCmd(RUNTIME_CMD)
+    const lib = home ? join(home, 'lib') : null
+    if (lib && existsSync(lib)) {
+      try {
+        const jars = readdirSync(lib).filter(f => /\.jar$/i.test(f))
+        const dupMajors = (prefix) => {
+          const majors = new Set()
+          for (const f of jars) { const m = f.match(new RegExp(`^${prefix}[^0-9]*?(\\d+)\\.`, 'i')); if (m) { majors.add(m[1]) } }
+          return majors.size > 1 ? [...majors] : null
+        }
+        const poi = dupMajors('poi'); const xml = dupMajors('xmlbeans')
+        if (poi) { add('fail', 'Apache POI duplicado', `Varias versiones de POI (${poi.join(', ')}) en ${lib}. Deja una sola (mueve las viejas fuera del classpath) o dará NoSuchMethodError al generar Excel.`) }
+        else { add('ok', 'Apache POI', 'una sola versión (o sin POI) en lib') }
+        if (xml) { add('fail', 'xmlbeans duplicado', `Varias versiones de xmlbeans (${xml.join(', ')}) en ${lib}. Deja solo la que pide tu POI.`) }
+      } catch (e) { add('warn', 'lib del Runtime', `No pude leer ${lib}: ${e.message}`) }
+    } else if (home) {
+      add('warn', 'lib del Runtime', `No encontré ${lib}.`)
+    }
+  }
+
+  // 3) Licencia: perfil + certificado en ~/.genrocket
+  const grDir = join(homedir(), '.genrocket')
+  if (!existsSync(grDir)) {
+    add('warn', 'Licencia del Runtime', `No existe ${grDir}. El Runtime necesita GR<id>Profile.grp + GR<id>Certificate.grc (descárgalos del portal web, menú Options).`)
+  } else {
+    try {
+      const files = readdirSync(grDir)
+      const profiles = files.filter(f => /Profile\.grp$/i.test(f))
+      const certIds = new Set(files.filter(f => /Certificate\.grc$/i.test(f)).map(f => f.replace(/Certificate\.grc$/i, '')))
+      if (!profiles.length) {
+        add('fail', 'Licencia', `No hay perfil (GR<id>Profile.grp) en ${grDir}. Descárgalo del portal.`)
+      } else {
+        for (const p of profiles) {
+          const id = p.replace(/Profile\.grp$/i, '')
+          if (certIds.has(id)) { add('ok', 'Licencia', `Perfil + certificado presentes (${id}).`) }
+          else { add('fail', 'Licencia', `Falta ${id}Certificate.grc en ${grDir}. Sin el certificado: "Unable to validate license".`) }
+        }
+      }
+    } catch (e) { add('warn', 'Licencia', `No pude leer ${grDir}: ${e.message}`) }
+  }
+
+  // 4) Conexiones de BD (driverJar existente)
+  const conns = dbConnections()
+  if (!conns.length) { add('warn', 'Bases de datos', 'Sin conexiones configuradas (genrocket.dbConnections).') }
+  for (const c of conns) {
+    if (!c.driverJar) { add('fail', `BD ${c.name}`, 'sin driverJar'); continue }
+    if (!existsSync(c.driverJar)) { add('fail', `BD ${c.name}`, `driverJar no existe: ${c.driverJar}`); continue }
+    let isDir = false; try { isDir = statSync(c.driverJar).isDirectory() } catch { /* */ }
+    add('ok', `BD ${c.name}`, `${c.type || 'oracle'} — driverJar ${isDir ? 'carpeta (comodín de classpath)' : 'jar'} OK`)
+  }
+
+  return checks
+}
+
+// Contexto empaquetado para primar al agente (API quirks, playbook, reglas).
+// Opcionalmente concatena un MD del usuario (GENROCKET_CONTEXT_FILE).
+export function loadAgentContext() {
+  let base = ''
+  try { base = readFileSync(fileURLToPath(new URL('./context/genrocket-context.md', import.meta.url)), 'utf8') } catch { base = '' }
+  let extra = ''
+  const f = process.env.GENROCKET_CONTEXT_FILE
+  if (f && existsSync(f)) { try { extra = readFileSync(f, 'utf8') } catch { /* */ } }
+  return extra ? `${base}\n\n---\n# Contexto adicional del proyecto\n\n${extra}` : base
 }
 
 // Descarga el paquete .grs de una CHAIN (ZIP con todos sus escenarios).
@@ -571,6 +671,33 @@ function fmtRuntimeRun(titulo, r, emptyMsg) {
 
 // ── Registro de tools en el server MCP existente ─────────────────
 export function registerGenRocketTools(server) {
+  server.tool(
+    'genrocket_context',
+    'Devuelve el contexto (Markdown) de este MCP: cómo funciona la API de GenRocket, sus errores conocidos, el módulo de BD, el Runtime local y un PLAYBOOK de diagnóstico (síntoma → herramienta). LÉELO al empezar a trabajar con GenRocket o ANTES de diagnosticar un fallo: mejora el entendimiento y evita errores conocidos. Incluye el contexto extra del proyecto si el usuario configuró uno.',
+    {},
+    async () => {
+      const ctx = loadAgentContext()
+      return ok(ctx || 'No se encontró el contexto empaquetado.')
+    }
+  )
+
+  server.tool(
+    'genrocket_runtime_doctor',
+    'DIAGNÓSTICO integral del entorno del Runtime + BD en un solo paso: versión de Java, comando del Runtime, jars de Apache POI/xmlbeans DUPLICADOS en la carpeta lib, perfil/certificado de LICENCIA en ~/.genrocket y el driverJar de cada conexión de BD. Úsalo ante cualquier fallo del Runtime (licencia, Excel/POI, "sin columnas") ANTES de investigar a mano.',
+    {},
+    async () => {
+      try {
+        const checks = await runtimeDoctor()
+        const icon = { ok: '[OK]', warn: '[AVISO]', fail: '[FALLA]' }
+        const body = checks.map(c => `${icon[c.status] || '[?]'} ${c.label}: ${c.detail}`).join('\n')
+        const nFail = checks.filter(c => c.status === 'fail').length
+        const nWarn = checks.filter(c => c.status === 'warn').length
+        const resumen = nFail ? `${nFail} problema(s) a corregir` : (nWarn ? `${nWarn} aviso(s)` : 'todo en orden')
+        return ok(`Diagnóstico del Runtime (${resumen}):\n\n${body}`)
+      } catch (e) { return bad(`runtime_doctor: ${e.message}`) }
+    }
+  )
+
   server.tool(
     'genrocket_test_connection',
     'Verifica la conexión con GenRocket: autentica contra el tenant configurado y devuelve los roles del usuario. Útil como health-check.',

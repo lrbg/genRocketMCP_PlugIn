@@ -255,7 +255,9 @@ La **contraseña** de GenRocket se guarda con el comando **`GenRocket: Set Passw
 
 **GenRocket — autoría y generadores:** crear dominio/atributos, **asignar un generador a un atributo** (`genrocket_assign_generator`: valida el nombre contra el catálogo real y sugiere parecidos; reemplaza el generador actual y acepta parámetros), agregar y parametrizar generadores, sugerir generador por nombre de atributo, ver el catálogo (`genrocket_available_generators`), listar/crear receivers. **Para saber los nombres EXACTOS de parámetros de un generador** (y no adivinar): `genrocket_generator_parameters` lista los generadores asignados a un atributo con sus parámetros reales y sus valores, tal como los expone GenRocket — úsalo antes de `genrocket_set_generator_parameter`.
 
-**GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`).
+**GenRocket — descarga y ejecución:** `genrocket_download_scenario`, `genrocket_run_scenario`, ejecución de chains y estado del Runtime (`genrocket_runtime_status`). Las tools del Runtime devuelven `stdout`/`stderr` para ver la causa real de un fallo (licencia, POI, etc.).
+
+**Contexto y diagnóstico:** `genrocket_context` carga en el agente un Markdown con el funcionamiento de la API, sus errores conocidos y un playbook síntoma→herramienta (mejora el entendimiento y la detección de bugs; el MCP también lo anuncia como `instructions` al conectarse). `genrocket_runtime_doctor` diagnostica de un tiro Java, el Runtime, jars de Apache POI/xmlbeans duplicados, el perfil/certificado de licencia en `~/.genrocket` y el `driverJar` de cada conexión. Puedes añadir contexto propio del proyecto con la variable `GENROCKET_CONTEXT_FILE` (ruta a un `.md`).
 
 **Bases de datos (solo lectura):** `db_list_connections`, `db_test_connection`, `db_list_tables`, `db_describe_table`, `db_list_indexes`, `db_sample`, `db_query`, `db_explore` (analiza el esquema completo y genera un `.md` de contexto por base), `db_read_context`.
 
