@@ -457,6 +457,11 @@ const RECEIVER_TYPES = [
   { alias: 'xml',   type: 'XMLFileReceiver',       desc: 'XML.' },
 ]
 
+// Extensión de archivo por tipo de receiver (para el fileName por defecto).
+const RECEIVER_EXT = {
+  DelimitedFileReceiver: 'csv', ExcelFileReceiver: 'xlsx', JSONFileReceiver: 'json', XMLFileReceiver: 'xml',
+}
+
 // Sello de tiempo ddmmyyhhmmss (local) para nombrar receivers de forma única.
 function ddmmyyhhmmss(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0')
@@ -1073,7 +1078,7 @@ export function registerGenRocketTools(server) {
 
   server.tool(
     'genrocket_add_domain_receiver',
-    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. IMPORTANTE: si el usuario NO especificó el tipo, primero llama a genrocket_available_receivers, MUÉSTRALE las opciones y PREGÚNTALE cuál quiere; no elijas tú el tipo. Acepta alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Si no pasas receiverName, se nombra automáticamente como <nombreDelDominio>+ddmmyyhhmmss. Después configura outputPath/fileName con genrocket_set_receiver_parameter.',
+    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. IMPORTANTE: si el usuario NO especificó el tipo, primero llama a genrocket_available_receivers, MUÉSTRALE las opciones y PREGÚNTALE cuál quiere; no elijas tú el tipo. Acepta alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Si no pasas receiverName, se nombra automáticamente como <nombreDelDominio>+ddmmyyhhmmss, y el fileName de salida se preconfigura con ese mismo nombre + la extensión del tipo (ej. Agente070826093045.xlsx).',
     {
       domainId: z.string(),
       receiverType: z.string().describe('Tipo o alias del receiver (csv, excel, json, xml, o el nombre exacto). Confírmalo con el usuario antes de llamar.'),
@@ -1083,7 +1088,14 @@ export function registerGenRocketTools(server) {
       try {
         const name = receiverName || await defaultReceiverName(domainId)
         await addDomainReceiver(domainId, receiverType, name)
-        return ok(`Receiver "${name}" (${RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType}) agregado al dominio.`)
+        const realType = RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType
+        const fileName = `${name}.${RECEIVER_EXT[realType] || 'txt'}`
+        // fileName por defecto (best-effort: si el nombre del parámetro difiere en el
+        // tenant, no rompemos el alta del receiver).
+        let fnNote = `\nfileName = ${fileName}`
+        try { await setReceiverParameter(domainId, name, 'fileName', fileName) }
+        catch (e) { fnNote = `\n(no pude fijar fileName automáticamente: ${e.message}. Configúralo con genrocket_set_receiver_parameter.)` }
+        return ok(`Receiver "${name}" (${realType}) agregado al dominio.${fnNote}`)
       } catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
     }
   )
