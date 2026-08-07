@@ -87,11 +87,19 @@ conocidos y te dice qué herramienta usar en cada caso.
 - **500 al asignar generador** → el atributo ya tenía generador; usa la tool que
   reemplaza (`genrocket_assign_generator`), que borra antes.
 - **Necesitas una chain y no existe** → créala en el Designer web; no hay API.
-- **El escenario creado por el AGENTE no corre pero el MANUAL sí** → usa
-  `genrocket_compare_scenarios(manualScenarioId, agentScenarioId)`: descarga ambos .grs
-  y muestra qué le falta al del agente (líneas marcadas `>>` de primary/receiver/domain
-  son la causa). Típico: el create por REST no marca el dominio como primary ni liga el
-  receiver → hay que hacerlo por la web (manos Playwright).
+- **El escenario creado por el AGENTE no corre pero el MANUAL sí** → el .grs viene
+  CIFRADO, así que NO lo diagnostiques por diff de archivo. Corre `genrocket_show_scenario`
+  en AMBOS y compara la ESTRUCTURA. Revisa, en este orden: (1) el dominio primario está
+  marcado `primary: true`; (2) ese dominio primario tiene un RECEIVER ligado; (3) DEPENDENCIAS
+  de dominio: si el dominio primario tiene `parent` (ej. Agente cuyo parent es Asegurado, con
+  un `ReferenceGen`→`Asegurado.id`), el escenario DEBE incluir TAMBIÉN el dominio padre —
+  un create de un solo dominio rompe la referencia y no genera bien. El `create_scenario`
+  por REST hace un escenario mínimo (un dominio, sin primary/receiver/parent), por eso falla.
+  RECOMENDACIÓN: en vez de crear uno nuevo desde cero, **CLONA** un escenario que ya funciona
+  (botón Copy en el Designer, por las manos web): así hereda dominios, primary, parent y receivers.
+  Diferencias que son POR DISEÑO (no fallas): en un chain se usa `ExcelFileMultiSheetReceiver`
+  a un workbook compartido, `loopCount` alto y la columna `id` excluida (solo para relacionar
+  internamente); standalone usa `ExcelFileReceiver` a archivo propio, loopCount 1 e `id` incluida.
 
 ## Manos web (Playwright) — para lo que la API REST NO puede
 
