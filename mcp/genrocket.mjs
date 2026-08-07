@@ -15,7 +15,7 @@ import { z } from 'zod'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, readdir, stat } from 'node:fs/promises'
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
+import { readFileSync, existsSync, statSync, readdirSync, appendFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, dirname, delimiter as pathDelimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,6 +39,14 @@ const RUNTIME_OUTDIR = FILECFG.runtimeOutputDir || process.env.GENROCKET_RUNTIME
 // Tope de espera por request. Algunos endpoints (p.ej. /generator/list) pueden
 // colgarse; sin timeout el MCP quedaría bloqueado. Configurable por si un tenant es lento.
 const HTTP_TIMEOUT_MS = Number(FILECFG.httpTimeoutMs || process.env.GENROCKET_HTTP_TIMEOUT_MS || 90000)
+
+// ── Log a archivo (para depurar sin adivinar) ────────────────────
+// Registra cada llamada REST (path + status/errores) y los errores de tools.
+// NUNCA registra contraseñas/tokens (el login no pasa por aquí y no volcamos bodies).
+const LOG_FILE = FILECFG.logFile || process.env.GENROCKET_LOG_FILE || join(tmpdir(), 'genrocket-mcp.log')
+function logLine(obj) {
+  try { appendFileSync(LOG_FILE, JSON.stringify({ t: new Date().toISOString(), ...obj }) + '\n') } catch { /* el log nunca rompe la operación */ }
+}
 
 // Normaliza el host a "<origin>/rest" (acepta con/sin protocolo, con/sin /rest final).
 function grBase() {
@@ -110,14 +118,18 @@ async function grPost(path, bodyObj, _retried = false) {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || `GenRocket error ${res.status} en ${path}`)
+    const msg = err.message || `GenRocket error ${res.status} en ${path}`
+    logLine({ level: 'error', kind: 'rest', path, status: res.status, error: msg })
+    throw new Error(msg)
   }
   // GenRocket responde 200 aun con errores lógicos: { success:false, errors:{...} }
   const data = await res.json()
   if (data && data.success === false) {
     const msg = data.errors ? Object.values(data.errors).join('; ') : 'GenRocket devolvió success:false'
+    logLine({ level: 'error', kind: 'rest', path, status: 200, error: msg })
     throw new Error(msg)
   }
+  logLine({ level: 'info', kind: 'rest', path, status: 200 })
   return data
 }
 
@@ -273,6 +285,9 @@ export async function runtimeDoctor() {
       }
     } catch (e) { add('warn', 'Licencia', `No pude leer ${grDir}: ${e.message}`) }
   }
+
+  // 5) Ruta del log (para depurar)
+  add('ok', 'Log del MCP', `${LOG_FILE} (usa genrocket_read_log para ver los últimos eventos)`)
 
   // 4) Conexiones de BD (driverJar existente)
   const conns = dbConnections()
@@ -676,7 +691,7 @@ function catalogSql(type, what, table) {
 
 // ── Helpers de formato ───────────────────────────────────────────
 const ok  = (text) => ({ content: [{ type: 'text', text }] })
-const bad = (text) => ({ content: [{ type: 'text', text }], isError: true })
+const bad = (text) => { logLine({ level: 'error', kind: 'tool', error: text }); return { content: [{ type: 'text', text }], isError: true } }
 
 // Formatea el resultado de una corrida del Runtime (chain/escenario) mostrando
 // exit code, archivos y —clave para diagnosticar fallos de licencia/POI/etc.—
@@ -726,6 +741,20 @@ export function registerGenRocketTools(server) {
   )
 
   server.tool(
+    'genrocket_read_log',
+    'Lee los últimos eventos del log del MCP (llamadas REST con su status/errores y errores de tools). Úsalo para DIAGNOSTICAR por qué falló una operación en vez de adivinar. Incluye la ruta del archivo de log.',
+    { lines: z.number().int().positive().optional().describe('Cuántas líneas finales mostrar (default 60)') },
+    async ({ lines = 60 }) => {
+      try {
+        if (!existsSync(LOG_FILE)) return ok(`Aún no hay log en ${LOG_FILE}.`)
+        const all = readFileSync(LOG_FILE, 'utf8').split('\n').filter(Boolean)
+        const tail = all.slice(-lines).join('\n')
+        return ok(`Log (${LOG_FILE}), últimas ${Math.min(lines, all.length)} de ${all.length} líneas:\n\n${tail}`)
+      } catch (e) { return bad(`read_log: ${e.message}`) }
+    }
+  )
+
+  server.tool(
     'genrocket_test_connection',
     'Verifica la conexión con GenRocket: autentica contra el tenant configurado y devuelve los roles del usuario. Útil como health-check.',
     {},
@@ -757,6 +786,28 @@ export function registerGenRocketTools(server) {
       } catch (e) {
         return bad(`Error al listar escenarios: ${e.message}`)
       }
+    }
+  )
+
+  server.tool(
+    'genrocket_create_scenario',
+    'Crea un ESCENARIO en un proyecto/versión, normalmente a partir de un dominio (el dominio queda como Scenario Domain). POST /scenario/create. Parámetros mínimos: projectName, versionNumber, name; domainName para ligar el dominio. Si tu tenant pide campos extra, pásalos en "extra" (objeto). La respuesta y cualquier error quedan en el log (genrocket_read_log) para afinar el payload.',
+    {
+      projectName: z.string().describe('Nombre exacto del proyecto'),
+      versionNumber: z.string().optional().describe('Versión del proyecto (default 1.0)'),
+      name: z.string().describe('Nombre del escenario a crear'),
+      domainName: z.string().optional().describe('Dominio a ligar como Scenario Domain (recomendado)'),
+      description: z.string().optional(),
+      extra: z.record(z.any()).optional().describe('Campos adicionales del payload si el tenant los requiere'),
+    },
+    async ({ projectName, versionNumber = '1.0', name, domainName, description, extra }) => {
+      try {
+        const fields = { projectName, versionNumber, name, ...(domainName ? { domainName } : {}), ...(description ? { description } : {}), ...(extra || {}) }
+        const res = await createScenario(fields)
+        logLine({ level: 'info', kind: 'create_scenario', name, projectName, domainName: domainName || null, ok: true })
+        const id = res?.scenario?.externalId || res?.externalId || ''
+        return ok(`Escenario "${name}" creado en "${projectName}" v${versionNumber}${domainName ? ` (dominio ${domainName})` : ''}.${id ? ` externalId: ${id}` : ''}`)
+      } catch (e) { return bad(`create_scenario: ${e.message}`) }
     }
   )
 
