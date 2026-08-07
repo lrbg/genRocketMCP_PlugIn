@@ -447,6 +447,15 @@ const RECEIVER_MAP = {
   json: 'JSONFileReceiver', xml: 'XMLFileReceiver',
   excel: 'ExcelFileReceiver', xlsx: 'ExcelFileReceiver',
 }
+
+// Tipos de receiver que el usuario puede elegir (los más comunes, presentes en
+// cualquier tenant). El agente los muestra y PREGUNTA cuál quiere antes de agregar.
+const RECEIVER_TYPES = [
+  { alias: 'csv',   type: 'DelimitedFileReceiver', desc: 'Archivo delimitado / CSV (el más común).' },
+  { alias: 'excel', type: 'ExcelFileReceiver',     desc: 'Excel (.xlsx).' },
+  { alias: 'json',  type: 'JSONFileReceiver',      desc: 'JSON.' },
+  { alias: 'xml',   type: 'XMLFileReceiver',       desc: 'XML.' },
+]
 export async function addDomainReceiver(domainId, receiverType, receiverName) {
   const rt = RECEIVER_MAP[String(receiverType || '').toLowerCase()] || receiverType
   return grPost('/domainReceiver/add', { organizationId: requireOrg(), domainId, receiverType: rt, receiverName: receiverName || rt })
@@ -1040,15 +1049,25 @@ export function registerGenRocketTools(server) {
   )
 
   server.tool(
+    'genrocket_available_receivers',
+    'Lista los TIPOS de receiver (salida) que se pueden agregar a un dominio (CSV, Excel, JSON, XML). Úsalo cuando el usuario quiera agregar un receiver: MUÉSTRALE estas opciones y PREGÚNTALE cuál quiere ANTES de llamar genrocket_add_domain_receiver. No asumas el tipo por tu cuenta.',
+    {},
+    async () => {
+      const lines = RECEIVER_TYPES.map(r => `- ${r.alias} (${r.type}): ${r.desc}`).join('\n')
+      return ok(`Tipos de receiver disponibles:\n${lines}\n\n¿Cuál quieres agregar? (también puedes indicar otro tipo de GenRocket por su nombre exacto si lo conoces)`)
+    }
+  )
+
+  server.tool(
     'genrocket_add_domain_receiver',
-    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. Puedes usar alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Despues configura outputPath/fileName con genrocket_set_receiver_parameter.',
+    'Agrega un receiver (salida) a un dominio para exportar los datos generados. POST /domainReceiver/add. IMPORTANTE: si el usuario NO especificó el tipo, primero llama a genrocket_available_receivers, MUÉSTRALE las opciones y PREGÚNTALE cuál quiere; no elijas tú el tipo. Acepta alias: "csv" (=DelimitedFileReceiver), "json" (=JSONFileReceiver), "xml" (=XMLFileReceiver), "excel" (=ExcelFileReceiver). Después configura outputPath/fileName con genrocket_set_receiver_parameter.',
     {
       domainId: z.string(),
-      receiverType: z.string().describe('Tipo de receiver, ej. CSVFileReceiver, JSONFileReceiver, XMLFileReceiver'),
+      receiverType: z.string().describe('Tipo o alias del receiver (csv, excel, json, xml, o el nombre exacto). Confírmalo con el usuario antes de llamar.'),
       receiverName: z.string().optional().describe('Nombre (default = receiverType)'),
     },
     async ({ domainId, receiverType, receiverName }) => {
-      try { await addDomainReceiver(domainId, receiverType, receiverName); return ok(`Receiver "${receiverName || receiverType}" (${receiverType}) agregado al dominio.`) }
+      try { await addDomainReceiver(domainId, receiverType, receiverName); return ok(`Receiver "${receiverName || receiverType}" (${RECEIVER_MAP[String(receiverType).toLowerCase()] || receiverType}) agregado al dominio.`) }
       catch (e) { return bad(`add_domain_receiver: ${e.message}`) }
     }
   )
