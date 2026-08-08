@@ -23,6 +23,18 @@ export function dbContextDir(context: vscode.ExtensionContext): string {
   return vscode.Uri.joinPath(context.globalStorageUri, 'db-context').fsPath
 }
 
+/** Variables de entorno de OCR (Tesseract) para el RAG, derivadas de settings. */
+export function ocrEnvVars(): Record<string, string> {
+  const c = vscode.workspace.getConfiguration('genrocket')
+  const env: Record<string, string> = {
+    GENROCKET_OCR: c.get<boolean>('ocr.enabled', true) ? '1' : '0',
+    GENROCKET_OCR_LANGS: c.get<string>('ocr.langs', 'spa+eng') || 'spa+eng',
+  }
+  const tp = (c.get<string>('ocr.tesseractPath', '') || '').trim()
+  if (tp) { env.GENROCKET_TESSERACT = tp }
+  return env
+}
+
 export interface GenrocketRuntime {
   /** Ruta absoluta al entrypoint del servidor MCP (mcp/index.mjs). */
   serverPath: string
@@ -111,6 +123,7 @@ export async function buildGenrocketRuntime(context: vscode.ExtensionContext): P
     GENROCKET_CONFIG_FILE: cfgFileUri.fsPath,
     GENROCKET_GRAPHRAG_DIR: graphragDir(context),   // índice compartido con el panel RAG
     GENROCKET_DB_CONTEXT_DIR: dbContextDir(context), // .md de contexto por base de datos (db_explore)
+    ...ocrEnvVars(),                                 // OCR (Tesseract) para imágenes/PDF escaneado
   }
   if (caFile) { env.NODE_EXTRA_CA_CERTS = caFile }
 

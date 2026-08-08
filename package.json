@@ -2,7 +2,7 @@
   "name": "genrocket-mcp-plugin",
   "displayName": "GenRocket MCP",
   "description": "Explora GenRocket (proyectos, escenarios, chains, dominios, generadores), descarga escenarios .grs, ejecuta el GenRocket Runtime y expone todo como servidor MCP para el chat de IA (Copilot).",
-  "version": "0.1.52",
+  "version": "0.1.53",
   "publisher": "lrbg",
   "engines": {
     "vscode": "^1.96.0"
@@ -79,6 +79,21 @@
           "type": "string",
           "default": "",
           "description": "Carpeta local que indexa el RAG de documentos (Word, PDF, Excel, HTML, texto). Se elige y se indexa desde el panel 'RAG de documentos' (icono de librería en el explorador de GenRocket)."
+        },
+        "genrocket.ocr.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "OCR para el RAG: lee imágenes (png/jpg/tiff…) y PDFs escaneados usando el binario Tesseract del sistema (offline, sin nube). Si Tesseract no está instalado, esos archivos se saltan con aviso."
+        },
+        "genrocket.ocr.tesseractPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta al ejecutable de Tesseract (ej. C:\\Program Files\\Tesseract-OCR\\tesseract.exe). Vacío = usa 'tesseract' del PATH. Para PDFs escaneados también ayuda tener 'pdftoppm' (poppler) o ImageMagick en el PATH."
+        },
+        "genrocket.ocr.langs": {
+          "type": "string",
+          "default": "spa+eng",
+          "description": "Idiomas de OCR (códigos de Tesseract separados por '+'). Requiere los packs de idioma instalados en Tesseract (ej. spa, eng)."
         },
         "genrocket.web.enabled": {
           "type": "boolean",

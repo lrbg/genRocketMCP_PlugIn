@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'node:fs'
 import { execFile } from 'node:child_process'
-import { graphragDir } from './mcpProvider'
+import { graphragDir, ocrEnvVars } from './mcpProvider'
 
 /**
  * Panel de configuración del RAG local: elegir carpeta, indexarla (extrae texto
@@ -42,7 +42,7 @@ export class RagPanel {
   private runIndex(folder: string): Promise<any> {
     const cli = this.context.asAbsolutePath(path.join('mcp', 'graphrag-cli.mjs'))
     const cwd = this.context.asAbsolutePath('mcp')
-    const env = { ...process.env, GENROCKET_GRAPHRAG_DIR: graphragDir(this.context) }
+    const env = { ...process.env, GENROCKET_GRAPHRAG_DIR: graphragDir(this.context), ...ocrEnvVars() }
     return new Promise((resolve) => {
       execFile('node', [cli, folder], { cwd, env, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
         const line = (stdout || '').trim().split('\n').filter(Boolean).pop() || ''
@@ -155,8 +155,9 @@ export class RagPanel {
     <div>Tipos soportados:
       <span class="pill">Word .docx</span><span class="pill">PDF</span><span class="pill">Excel .xlsx</span>
       <span class="pill">HTML</span><span class="pill">txt / md / csv / json</span><span class="pill">código</span>
+      <span class="pill">Imágenes (OCR)</span><span class="pill">PDF escaneado (OCR)</span>
     </div>
-    <p class="muted" style="margin-bottom:0">Nota: un PDF que sea solo imagen (escaneado) no tiene texto extraíble; ahí se necesitaría OCR.</p>
+    <p class="muted" style="margin-bottom:0">OCR: las imágenes (png/jpg/tiff…) y los PDF escaneados se leen con <b>Tesseract</b> instalado en tu equipo (offline). Si no está, esos archivos se saltan; instala Tesseract OCR (con los idiomas spa/eng) o define su ruta en <i>genrocket.ocr.tesseractPath</i>.</p>
   </div>
   <p class="muted">Índice guardado en: <code id="indexDir"></code></p>
 

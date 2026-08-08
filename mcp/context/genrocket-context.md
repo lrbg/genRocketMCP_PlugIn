@@ -68,6 +68,14 @@ conocidos y te dice qué herramienta usar en cada caso.
   luego usa ese contexto (o `db_read_context`) para construir consultas con criterio.
 - Explora con `db_list_tables` / `db_describe_table` antes de escribir SQL complejo.
 
+## RAG de documentos (index_docs / query_docs)
+
+Indexa una carpeta local y responde citando pasajes. Extrae texto de Word/PDF/Excel/
+HTML/texto y **también de imágenes y PDF escaneados vía OCR** (Tesseract del sistema,
+offline). Si un archivo es imagen o PDF sin capa de texto y Tesseract no está instalado,
+se salta con aviso; dile al usuario que instale Tesseract OCR (idiomas spa/eng) o defina
+`genrocket.ocr.tesseractPath`. Para PDF escaneados también ayuda tener `pdftoppm`/ImageMagick.
+
 ## Playbook de diagnóstico (síntoma → acción)
 
 - **"(sin columnas)" o SQL sin datos** → revisa `driverJar` (debe apuntar al `.jar` o a
